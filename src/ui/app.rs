@@ -2,6 +2,7 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, EnableMouseCapture, DisableMouseCapture};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
+
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::Line;
@@ -26,6 +27,7 @@ pub enum InputAction {
 pub enum AppState {
     Idle,
     ViewingHistory,
+    ViewingLogs,
     Input { prompt: String, buffer: String, action: InputAction },
 }
 
@@ -35,6 +37,7 @@ pub struct App {
     monitor: AppMonitor,
     history: Vec<Session>,
     usage: Vec<(String, i64)>,
+    logs: Vec<String>,
     manual_app_name: Option<String>,
     current_app: String,
     current_window: Option<String>,
@@ -42,21 +45,20 @@ pub struct App {
 }
 
 impl App {
-    pub async fn new(database: Database) -> Result<Self> {
+    pub fn new(database: Database) -> Self {
         let monitor = AppMonitor::new();
-        let history = database.get_recent_sessions(10).await?;
-        let usage = database.get_app_usage().await?;
-        Ok(Self {
+        Self {
             state: AppState::Idle,
             database,
             monitor,
-            history,
-            usage,
+            history: vec![],
+            usage: vec![],
+            logs: vec![],
             manual_app_name: None,
             current_app: "unknown".to_string(),
             current_window: None,
             current_session: None,
-        })
+        }
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -65,15 +67,19 @@ impl App {
         // Start tracking initial app before enabling raw mode
         self.start_tracking().await?;
 
+        // Load history and usage
+        self.history = self.database.get_recent_sessions(10).await.unwrap();
+        self.usage = self.database.get_app_usage().await.unwrap();
+
         eprintln!("Enabling raw mode...");
-        enable_raw_mode()?;
+        enable_raw_mode().unwrap();
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture).unwrap();
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        let mut terminal = Terminal::new(backend).unwrap();
 
         let mut last_save = Instant::now();
-        let save_interval = Duration::from_secs(3600); // 1 hour
+        let save_interval = Duration::from_secs(600); // 10 minutes
 
         loop {
             terminal.draw(|f| self.draw(f))?;
@@ -98,6 +104,14 @@ impl App {
                                 _ => self.state = AppState::Idle,
                             }
                         }
+                        AppState::ViewingLogs => {
+                            match key.code {
+                                KeyCode::Char('q') => break,
+                                KeyCode::Esc => self.state = AppState::Idle,
+                                _ => self.state = AppState::Idle,
+                            }
+                        }
+
                         AppState::Input { buffer, .. } => {
                             match key.code {
                                 KeyCode::Char(c) => buffer.push(c),
@@ -107,14 +121,15 @@ impl App {
                                 _ => {}
                             }
                         }
-                        _ => {
+                         _ => {
                             match key.code {
                                 KeyCode::Char('q') => break,
                                 KeyCode::Char('e') => self.end_session().await?,
                                 KeyCode::Char('r') => self.start_rename(),
                                 KeyCode::Char('m') => self.start_set_app_name(),
                                 KeyCode::Char('u') => self.update_current_app(),
-                                KeyCode::Char('v') => self.view_history().await?,
+                                KeyCode::Char('v') => self.view_history().await,
+                                KeyCode::Char('l') => self.view_logs(),
                                 _ => {}
                             }
                         }
@@ -138,15 +153,22 @@ impl App {
         // Save current session on exit
         if let Some(mut session) = self.current_session.take() {
             session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
-            if let Err(e) = self.database.insert_session(&session).await {
-                log::error!("Failed to save session on exit: {}", e);
+            if session.duration >= 10 {
+                if let Err(e) = self.database.insert_session(&session).await {
+                    log::error!("Failed to save session on exit: {}", e);
+                    self.logs.push(format!("Failed to save session: {}", e));
+                } else {
+                    self.history = self.database.get_recent_sessions(10).await?;
+                    self.usage = self.database.get_app_usage().await?;
+                    self.logs.push(format!("Ended session: {} for {}s", session.app_name, session.duration));
+                }
             } else {
-                self.usage = self.database.get_app_usage().await?;
+                self.logs.push(format!("Skipped saving short session on exit: {} for {}s", session.app_name, session.duration));
             }
         }
 
-        disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+        disable_raw_mode().unwrap();
+        execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
         Ok(())
     }
 
@@ -161,12 +183,18 @@ impl App {
             AppState::Idle => {
                 if let Some(session) = &self.current_session {
                     let duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
-                    format!("Tracking: {} for {}s - Current app: {}", session.app_name, duration, self.current_app)
+                    let display_name = if let Some(window) = &session.window_name {
+                        format!("{} - {}", session.app_name, window)
+                    } else {
+                        session.app_name.clone()
+                    };
+                    format!("Tracking: {} for {}s", display_name, duration)
                 } else {
                     format!("Not tracking - Current app: {}", self.current_app)
                 }
             }
             AppState::ViewingHistory => "Viewing History - Press any key to return".to_string(),
+            AppState::ViewingLogs => "Viewing Logs - Press any key to return".to_string(),
             AppState::Input { .. } => "Input mode - Enter to confirm, Esc to cancel".to_string(),
         };
 
@@ -192,6 +220,19 @@ impl App {
                     .block(Block::default().borders(Borders::ALL).title("Recent Sessions"));
                 f.render_widget(list, chunks[1]);
             }
+            AppState::ViewingLogs => {
+                let log_items: Vec<ListItem> = self
+                    .logs
+                    .iter()
+                    .rev()
+                    .take(20)
+                    .map(|log| ListItem::new(Line::from(log.clone())))
+                    .collect();
+                let log_list = List::new(log_items)
+                    .block(Block::default().borders(Borders::ALL).title("Logs"));
+                f.render_widget(log_list, chunks[1]);
+            }
+
             AppState::Input { prompt, buffer, .. } => {
                 let input_display = format!("{}: {}", prompt, buffer);
                 let input_widget = Paragraph::new(input_display)
@@ -204,9 +245,8 @@ impl App {
                     .iter()
                     .take(10)
                     .map(|(app, duration)| {
-                        let hours = duration / 3600;
-                        let minutes = (duration % 3600) / 60;
-                        let display = format!("{}: {}h {}m", app, hours, minutes);
+                        let minutes = duration / 60;
+                        let display = format!("{}: {}m", app, minutes);
                         ListItem::new(Line::from(display))
                     })
                     .collect();
@@ -234,6 +274,7 @@ impl App {
         };
         self.current_session = Some(session);
         self.current_window = window_name;
+        self.logs.push(format!("Started tracking: {}", app_name));
         self.state = AppState::Idle; // Keep idle to show usage
         Ok(())
     }
@@ -242,10 +283,14 @@ impl App {
         // End current session
         if let Some(mut session) = self.current_session.take() {
             session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
-            if let Err(e) = self.database.insert_session(&session).await {
-                log::error!("Failed to save session: {}", e);
+            if session.duration >= 10 {
+                if let Err(e) = self.database.insert_session(&session).await {
+                    log::error!("Failed to save session: {}", e);
+                } else {
+                    self.usage = self.database.get_app_usage().await?;
+                }
             } else {
-                self.usage = self.database.get_app_usage().await?; // Update usage
+                self.logs.push(format!("Skipped saving short session: {} for {}s", session.app_name, session.duration));
             }
         }
         // Start new session
@@ -259,32 +304,42 @@ impl App {
             duration: 0,
         };
         self.current_session = Some(session);
-        self.current_app = new_app;
+        self.current_app = new_app.clone();
         self.current_window = window_name;
+        self.logs.push(format!("Switched to: {}", new_app));
         Ok(())
     }
 
     async fn end_session(&mut self) -> Result<()> {
         if let Some(mut session) = self.current_session.take() {
             session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
-            if let Err(e) = self.database.insert_session(&session).await {
-                log::error!("Failed to save session: {}", e);
+            if session.duration >= 10 {
+                self.database.insert_session(&session).await.unwrap();
+                self.history = self.database.get_recent_sessions(10).await.unwrap();
+                self.usage = self.database.get_app_usage().await.unwrap();
+                self.logs.push(format!("Ended session: {} for {}s", session.app_name, session.duration));
             } else {
-                self.history = self.database.get_recent_sessions(10).await?;
-                self.usage = self.database.get_app_usage().await?;
-                // Sort history by duration descending
-                self.history.sort_by(|a, b| b.duration.cmp(&a.duration));
+                self.logs.push(format!("Skipped ending short session: {} for {}s", session.app_name, session.duration));
             }
         }
         Ok(())
     }
 
-    async fn view_history(&mut self) -> Result<()> {
-        self.history = self.database.get_recent_sessions(10).await?;
+    async fn view_history(&mut self) {
+        self.history = self.database.get_recent_sessions(10).await.unwrap();
         // Sort by duration descending (most used first)
         self.history.sort_by(|a, b| b.duration.cmp(&a.duration));
         self.state = AppState::ViewingHistory;
-        Ok(())
+    }
+
+
+
+    fn start_set_app_name(&mut self) {
+        self.state = AppState::Input {
+            prompt: "Enter app name to track".to_string(),
+            buffer: String::new(),
+            action: InputAction::SetAppName,
+        };
     }
 
     fn start_rename(&mut self) {
@@ -297,19 +352,15 @@ impl App {
         }
     }
 
-    fn start_set_app_name(&mut self) {
-        self.state = AppState::Input {
-            prompt: "Enter app name to track".to_string(),
-            buffer: String::new(),
-            action: InputAction::SetAppName,
-        };
-    }
-
     fn update_current_app(&mut self) {
         if self.manual_app_name.is_none() {
             self.current_app = self.monitor.get_active_app().unwrap_or("unknown".to_string());
             self.current_window = self.monitor.get_active_window_name().ok();
         }
+    }
+
+    fn view_logs(&mut self) {
+        self.state = AppState::ViewingLogs;
     }
 
     fn handle_input(&mut self) {

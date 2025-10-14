@@ -70,4 +70,13 @@ impl Database {
         .await?;
         Ok(rows)
     }
+
+    pub async fn update_session_name(&self, id: i32, new_name: String) -> Result<()> {
+        sqlx::query("UPDATE sessions SET app_name = $1 WHERE id = $2")
+            .bind(new_name)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }

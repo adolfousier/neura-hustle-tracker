@@ -43,11 +43,12 @@ The app provides a terminal-based interface for time tracking.
 - **m**: Manually set app name (if auto-detection fails)
 - **u**: Update current app detection
 - **v**: View session history
+- **l**: View application logs
 - **q**: Quit the application
 
 **Note**: The app starts tracking automatically when launched. Use the above commands to control it.
 
-Sessions automatically track the active application and duration. Data is saved to Postgres every hour automatically, or manually when ending a session.
+Sessions automatically track the active application and duration. Data is saved to Postgres every 10 minutes automatically, or manually when ending a session.
 
 ## Architecture
 The application is organized into modular services:
