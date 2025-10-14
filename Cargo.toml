@@ -1,0 +1,17 @@
+[package]
+name = "neura_hustle_tracker"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+chrono = { version = "0.4.42", features = ["serde"] }
+clap = "4.5.49"
+crossterm = "0.29.0"
+dotenvy = "0.15.7"
+env_logger = "0.11.5"
+log = "0.4.22"
+ratatui = "0.29.0"
+serde = { version = "1.0.228", features = ["derive"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "chrono"] }
+tokio = { version = "1.48.0", features = ["full"] }

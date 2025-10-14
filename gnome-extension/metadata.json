@@ -1,0 +1,10 @@
+{
+  "uuid": "timetracker-pid@timetracking.rs",
+  "name": "Timetracker PID Getter",
+  "description": "Provides D-Bus method to get active window PID",
+  "shell-version": ["48"],
+  "version": 1,
+  "url": "https://github.com/user/timetracking"
+}
+</xai:function_call ><xai:function_call name="write">
+<parameter name="filePath">/srv/rs/timetracking/gnome-extension/extension.js
