@@ -21,7 +21,8 @@ impl Database {
                 app_name TEXT NOT NULL,
                 window_name TEXT,
                 start_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                duration BIGINT NOT NULL
+                duration BIGINT NOT NULL,
+                category TEXT
             )
             "#,
         )
@@ -36,17 +37,27 @@ impl Database {
         )
         .execute(&self.pool)
         .await?;
+
+        // Add category column if it doesn't exist (for migration)
+        sqlx::query(
+            r#"
+            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS category TEXT
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
     pub async fn insert_session(&self, session: &Session) -> Result<i32> {
         let id: (i32,) = sqlx::query_as(
-            "INSERT INTO sessions (app_name, window_name, start_time, duration) VALUES ($1, $2, $3, $4) RETURNING id",
+            "INSERT INTO sessions (app_name, window_name, start_time, duration, category) VALUES ($1, $2, $3, $4, $5) RETURNING id",
         )
         .bind(&session.app_name)
         .bind(&session.window_name)
         .bind(session.start_time)
         .bind(session.duration)
+        .bind(&session.category)
         .fetch_one(&self.pool)
         .await?;
         Ok(id.0)
@@ -54,7 +65,7 @@ impl Database {
 
     pub async fn get_recent_sessions(&self, limit: i64) -> Result<Vec<Session>> {
         let sessions = sqlx::query_as::<_, Session>(
-            "SELECT id, app_name, window_name, start_time, duration FROM sessions ORDER BY start_time DESC LIMIT $1",
+            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions ORDER BY start_time DESC LIMIT $1",
         )
         .bind(limit)
         .fetch_all(&self.pool)

@@ -1,6 +1,30 @@
 # Changelog
 
-## v0.1.4
+## v0.1.5 (2025-10-15)
+- Added AFK (Away From Keyboard) detection feature with real-time status display
+- Implemented global keyboard and mouse activity monitoring using rdev library
+- Added "AFK Status" card to the UI showing current status, idle time, and activity detection
+- Positioned AFK card adjacent to Timeline in horizontal layout (50/50 split) and below in vertical layout
+- AFK threshold set to 5 minutes of inactivity
+- Cross-platform input event listening for Windows, macOS, and Linux
+- Enhanced UI responsiveness with adaptive AFK card sizing
+- Implemented cross-platform support for Linux (X11/Wayland), Windows, and macOS using active-win-pos-rs library
+- Replaced Linux-specific GNOME extension with universal window detection for better cross-platform compatibility
+- Updated README with detailed setup instructions for Windows and macOS, including permission requirements
+- Added platform-specific prerequisites and supported platforms section
+- Restored and enhanced Features section in README highlighting cross-platform support and full responsiveness
+- Added app categorization system with automatic category assignment (Development, Browsing, Communication, Media, Files, Other)
+- Implemented commands popup menu accessible via Shift+C for better discoverability
+- Added adaptive responsive layout that adjusts to terminal size (vertical layout for small terminals, horizontal for large ones)
+- Enhanced UI with centered input dialogs and improved visual design
+- Added category column to database schema with migration support
+- Improved bar chart with category-based colors and better scaling
+- Enhanced timeline visualization with category colors and adaptive sizing
+- Added comprehensive commands menu with all available shortcuts
+- Improved app selection interface with better navigation and styling
+- Added support for storing and retrieving app categories in session data
+
+## v0.1.4 (2025-10-15)
 - Complete dashboard redesign with comprehensive data visualization
 - Added pie chart showing app usage categories (Development, Browsing, Communication, Media, Files, Other)
 - Added color-coded timeline showing recent activity patterns
@@ -13,7 +37,7 @@
 - Added sorted category display using BTreeMap for consistent ordering
 - Better integration of all dashboard components for comprehensive view
 
-## v0.1.3
+## v0.1.3 (2025-10-15)
 - Added interactive dashboard with multiple views: Daily, Weekly, Monthly, and History
 - Implemented Tab key navigation to switch between dashboard views
 - Added visual bar charts for usage statistics with color-coded displays
@@ -24,7 +48,7 @@
 - Improved session persistence on exit and crash scenarios
 - Updated commands display to show [Tab] for view switching
 
-## v0.1.2
+## v0.1.2 (2025-10-15)
 - Added logging functionality: press 'l' to view application logs
 - Changed auto-save interval from 1 hour to 10 minutes for more frequent data persistence
 - Improved error handling throughout the application
@@ -33,7 +57,7 @@
 - Added manual app name setting feature
 - Enhanced UI with better display of session information and usage statistics
 
-## v0.1.0 (Initial Release)
+## v0.1.0 (Initial Release) (2025-10-14)
 - Initial implementation: TUI for sessions, Postgres storage, app monitoring.
 - Dependencies added via cargo add.
 - Modular structure with services.

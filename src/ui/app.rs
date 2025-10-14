@@ -6,14 +6,16 @@ use crossterm::execute;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::Line;
-use ratatui::widgets::{BarChart, Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Borders, List, ListItem, Paragraph};
 use ratatui::style::{Color, Style};
 use ratatui::{Frame, Terminal};
 use std::collections::BTreeMap;
 use std::io;
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{DateTime, Local};
+use rdev::{listen, EventType};
+use std::sync::{Arc, Mutex};
 
 use crate::database::connection::Database;
 use crate::models::session::Session;
@@ -39,6 +41,7 @@ pub enum AppState {
     ViewingLogs,
     SelectingApp { selected_index: usize },
     Input { prompt: String, buffer: String, action: InputAction },
+    CommandsPopup,
 }
 
 pub struct App {
@@ -55,11 +58,27 @@ pub struct App {
     current_app: String,
     current_window: Option<String>,
     current_session: Option<Session>,
+    last_input: Arc<Mutex<DateTime<Local>>>,
 }
 
 impl App {
     pub fn new(database: Database) -> Self {
         let monitor = AppMonitor::new();
+        let last_input = Arc::new(Mutex::new(Local::now()));
+        let last_input_clone = Arc::clone(&last_input);
+        std::thread::spawn(move || {
+            let callback = move |event: rdev::Event| {
+                match event.event_type {
+                    EventType::KeyPress(_) | EventType::KeyRelease(_) | EventType::ButtonPress(_) | EventType::ButtonRelease(_) | EventType::MouseMove { .. } => {
+                        *last_input_clone.lock().unwrap() = Local::now();
+                    }
+                    _ => {}
+                }
+            };
+            if let Err(error) = listen(callback) {
+                eprintln!("Error listening for input events: {:?}", error);
+            }
+        });
         Self {
             state: AppState::Dashboard { view_mode: ViewMode::Daily },
             database,
@@ -74,6 +93,7 @@ impl App {
             current_app: "unknown".to_string(),
             current_window: None,
             current_session: None,
+            last_input,
         }
     }
 
@@ -164,6 +184,7 @@ impl App {
                                 KeyCode::Char('m') => self.start_set_app_name(),
                                 KeyCode::Char('u') => self.update_current_app(),
                                 KeyCode::Char('l') => self.view_logs(),
+                                KeyCode::Char('C') => self.state = AppState::CommandsPopup,  // Shift+C
                                 KeyCode::Tab => {
                                     *view_mode = match view_mode {
                                         ViewMode::Daily => ViewMode::Weekly,
@@ -175,6 +196,30 @@ impl App {
                                 _ => {}
                             }
                         }
+                        AppState::CommandsPopup => {
+                            match key.code {
+                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                KeyCode::Char('q') => break,
+                                KeyCode::Char('e') => {
+                                    self.end_session().await?;
+                                    self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
+                                }
+                                KeyCode::Char('r') => {
+                                    self.start_app_selection();
+                                }
+                                KeyCode::Char('m') => {
+                                    self.start_set_app_name();
+                                }
+                                KeyCode::Char('u') => {
+                                    self.update_current_app();
+                                    self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
+                                }
+                                KeyCode::Char('l') => {
+                                    self.view_logs();
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 }
             }
@@ -182,7 +227,7 @@ impl App {
             // Auto save every hour
             if last_save.elapsed() >= save_interval {
                 if let Some(session) = &mut self.current_session {
-                    session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
+                    session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
                     if let Err(e) = self.database.insert_session(session).await {
                         log::error!("Failed to auto save session: {}", e);
                     } else {
@@ -194,7 +239,7 @@ impl App {
 
         // Save current session on exit
         if let Some(mut session) = self.current_session.take() {
-            session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
+            session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
             if session.duration >= 10 {
                 if let Err(e) = self.database.insert_session(&session).await {
                     log::error!("Failed to save session on exit: {}", e);
@@ -218,23 +263,29 @@ impl App {
         let size = f.area();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1), Constraint::Length(3)].as_ref())
+            .constraints([Constraint::Length(3), Constraint::Min(1)].as_ref())
             .split(size);
 
-        // Status bar
+        // Status bar with Shift+C indicator
         let status = match &self.state {
             AppState::Dashboard { .. } => {
                 if let Some(session) = &self.current_session {
-                    let duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
+                    let duration = Local::now().signed_duration_since(session.start_time).num_seconds();
                     let display_name = self.manual_app_name.as_ref().unwrap_or(&session.app_name);
-                    format!("Tracking: {} for {}s", display_name, duration)
+                    format!("Tracking: {} for {}s | [Shift+C] Commands", display_name, duration)
                 } else {
-                    format!("Not tracking - Current app: {}", self.current_app)
+                    format!("Not tracking - Current app: {} | [Shift+C] Commands", self.current_app)
                 }
             }
             AppState::ViewingLogs => "Viewing Logs - Press any key to return".to_string(),
-            AppState::SelectingApp { .. } => "Select app to rename (↑/↓ + Enter) or Esc to cancel".to_string(),
-            AppState::Input { prompt, buffer, .. } => format!("{}: {}", prompt, buffer),
+            AppState::SelectingApp { .. } => "Rename Mode - Use arrow keys to select an app".to_string(),
+            AppState::Input { action, .. } => {
+                match action {
+                    InputAction::RenameApp { .. } => "Rename Mode - Enter new name for the app".to_string(),
+                    InputAction::SetAppName => "Manual App Name - Enter the app name to track".to_string(),
+                }
+            }
+            AppState::CommandsPopup => "Commands Menu - Press key to execute or Esc to close".to_string(),
         };
 
         let status_widget = Paragraph::new(status)
@@ -257,46 +308,138 @@ impl App {
             }
 
             AppState::SelectingApp { selected_index } => {
+                // Full-screen app selection view
+                let max_items = (chunks[1].height.saturating_sub(2) as usize).min(20).max(5);
                 let usage_items: Vec<ListItem> = self
                     .usage
                     .iter()
                     .enumerate()
-                    .take(10)
+                    .take(max_items)
                     .map(|(i, (app, duration))| {
-                        let minutes = duration / 60;
+                        let hours = duration / 3600;
+                        let minutes = (duration % 3600) / 60;
                         let prefix = if i == *selected_index { "→ " } else { "  " };
-                        let display = format!("{}{}: {}m", prefix, app, minutes);
-                        ListItem::new(Line::from(display))
+
+                        let time_display = if hours > 0 {
+                            format!("{}h {}m", hours, minutes)
+                        } else {
+                            format!("{}m", minutes)
+                        };
+
+                        let display = format!("{}{:<30} {}", prefix, app, time_display);
+
+                        let style = if i == *selected_index {
+                            Style::default().fg(Color::Yellow)
+                        } else {
+                            Style::default()
+                        };
+
+                        ListItem::new(Line::from(display)).style(style)
                     })
                     .collect();
+
                 let usage_list = List::new(usage_items)
-                    .block(Block::default().borders(Borders::ALL).title("App Usage - Select to Rename"));
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("📝 Select App to Rename (↑/↓ to navigate, Enter to select, Esc to cancel)"));
                 f.render_widget(usage_list, chunks[1]);
             }
 
-            AppState::Input { .. } => {
-                // Input is shown in status bar, show daily usage as default
-                self.draw_dashboard(f, chunks[1], &ViewMode::Daily);
+            AppState::Input { prompt, buffer, action } => {
+                // Full-screen input view with centered input box
+                let input_area = Self::centered_rect(70, 30, chunks[1]);
+
+                // Clear background
+                f.render_widget(ratatui::widgets::Clear, input_area);
+
+                // Determine title based on action
+                let title = match action {
+                    InputAction::RenameApp { .. } => "✏️  Rename App",
+                    InputAction::SetAppName => "🏷️  Set App Name",
+                };
+
+                // Create input text with cursor
+                let input_text = vec![
+                    Line::from(""),
+                    Line::from(prompt.clone()).style(Style::default().fg(Color::Cyan)),
+                    Line::from(""),
+                    Line::from(vec![
+                        ratatui::text::Span::styled("  ", Style::default()),
+                        ratatui::text::Span::styled(buffer.clone(), Style::default().fg(Color::White)),
+                        ratatui::text::Span::styled("█", Style::default().fg(Color::Yellow)),
+                    ]),
+                    Line::from(""),
+                    Line::from("  Press Enter to confirm, Esc to cancel").style(Style::default().fg(Color::Gray)),
+                ];
+
+                let input_widget = Paragraph::new(input_text)
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title(title)
+                        .style(Style::default().bg(Color::Black)));
+
+                f.render_widget(input_widget, input_area);
             }
 
             AppState::Dashboard { view_mode } => {
                 self.draw_dashboard(f, chunks[1], view_mode);
             }
-        }
 
-        // Commands bar at bottom
-        let commands = "[Tab] Switch View | [r] Rename app | [e] End | [l] Logs | [q] Quit";
-        let commands_widget = Paragraph::new(commands)
-            .block(Block::default().borders(Borders::ALL).title("Commands"));
-        f.render_widget(commands_widget, chunks[2]);
+            AppState::CommandsPopup => {
+                // Show dashboard in background
+                self.draw_dashboard(f, chunks[1], &ViewMode::Daily);
+
+                // Draw popup overlay
+                let popup_area = Self::centered_rect(60, 50, size);
+                f.render_widget(ratatui::widgets::Clear, popup_area);
+
+                let commands_text = vec![
+                    Line::from(""),
+                    Line::from("  [Tab]  Switch View (Daily/Weekly/Monthly/History)"),
+                    Line::from("  [r]    Rename app/tab"),
+                    Line::from("  [e]    End current session"),
+                    Line::from("  [m]    Manually set app name"),
+                    Line::from("  [u]    Update current app detection"),
+                    Line::from("  [l]    View logs"),
+                    Line::from("  [q]    Quit application"),
+                    Line::from(""),
+                    Line::from("  Press Esc to close this menu"),
+                ];
+
+                let popup = Paragraph::new(commands_text)
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("📋 Commands Menu")
+                        .style(Style::default().bg(Color::Black)));
+                f.render_widget(popup, popup_area);
+            }
+        }
+    }
+
+    // Helper function to create centered rectangle
+    fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
+        let popup_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage((100 - percent_y) / 2),
+                Constraint::Percentage(percent_y),
+                Constraint::Percentage((100 - percent_y) / 2),
+            ])
+            .split(r);
+
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage((100 - percent_x) / 2),
+                Constraint::Percentage(percent_x),
+                Constraint::Percentage((100 - percent_x) / 2),
+            ])
+            .split(popup_layout[1])[1]
     }
 
     fn draw_dashboard(&self, f: &mut Frame, area: ratatui::layout::Rect, view_mode: &ViewMode) {
-        // Split into left (chart & timeline & stats) and right (history & pie) - 50/50
-        let main_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-            .split(area);
+        // Adaptive layout based on terminal size
+        let use_vertical_layout = area.width < 120 || area.height < 30;
 
         let (data, title) = match view_mode {
             ViewMode::Daily => (&self.daily_usage, "📊 Daily Usage"),
@@ -305,62 +448,167 @@ impl App {
             ViewMode::History => (&self.daily_usage, "📊 Daily Usage"), // Default to daily when in history view
         };
 
-        // Create bar chart data
+        // Create bar chart data - limit based on space
+        let max_bars = if area.width < 80 { 5 } else if area.width < 120 { 8 } else { 10 };
         let bar_data: Vec<(&str, u64)> = data
             .iter()
-            .take(10)
+            .take(max_bars)
             .map(|(app, duration)| {
                 let minutes = (duration / 60) as u64;
                 (app.as_str(), minutes)
             })
             .collect();
 
-        // LEFT SIDE: Bar Chart + Timeline + Stats
-        let left_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(40),  // Bar chart
-                Constraint::Percentage(30),  // Timeline
-                Constraint::Percentage(30),  // Detailed stats
-            ].as_ref())
-            .split(main_chunks[0]);
+        if use_vertical_layout {
+            // VERTICAL LAYOUT for small terminals
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(10),  // Bar chart
+                    Constraint::Min(8),   // Timeline
+                    Constraint::Min(8),   // AFK
+                    Constraint::Min(8),   // Stats
+                    Constraint::Min(10),  // History
+                    Constraint::Min(8),   // Categories
+                ].as_ref())
+                .split(area);
 
-        // RIGHT SIDE: Session History + Pie Chart
-        let right_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
-            .split(main_chunks[1]);
+            self.draw_bar_chart(f, chunks[0], title, &bar_data);
+            self.draw_timeline(f, chunks[1]);
+            self.draw_afk(f, chunks[2]);
+            self.draw_stats(f, chunks[3], data);
+            self.draw_history(f, chunks[4]);
+            self.draw_pie_chart(f, chunks[5], data);
+        } else {
+            // HORIZONTAL LAYOUT for larger terminals (50/50 split)
+            let main_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ].as_ref())
+                .split(area);
 
-        // LEFT TOP: Bar chart
+            // LEFT SIDE: Bar Chart + Timeline/AFK + Stats
+            let left_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Percentage(40),   // Bar chart
+                    Constraint::Percentage(30),   // Timeline + AFK
+                    Constraint::Percentage(30),   // Detailed stats
+                ].as_ref())
+                .split(main_chunks[0]);
+
+            // RIGHT SIDE: Session History + Pie Chart
+            let right_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Percentage(70),
+                    Constraint::Percentage(30),
+                ].as_ref())
+                .split(main_chunks[1]);
+
+            self.draw_bar_chart(f, left_chunks[0], title, &bar_data);
+            let timeline_afk_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                .split(left_chunks[1]);
+            self.draw_timeline(f, timeline_afk_chunks[0]);
+            self.draw_afk(f, timeline_afk_chunks[1]);
+            self.draw_stats(f, left_chunks[2], data);
+            self.draw_history(f, right_chunks[0]);
+            self.draw_pie_chart(f, right_chunks[1], data);
+        }
+    }
+
+    fn draw_bar_chart(&self, f: &mut Frame, area: ratatui::layout::Rect, title: &str, bar_data: &[(&str, u64)]) {
         if bar_data.is_empty() {
             let empty_msg = Paragraph::new("No data available yet. Start tracking!")
                 .block(Block::default().borders(Borders::ALL).title(title));
-            f.render_widget(empty_msg, left_chunks[0]);
+            f.render_widget(empty_msg, area);
         } else {
+            // Adaptive bar width based on terminal width
+            let bar_width = if area.width < 60 { 3 } else if area.width < 100 { 5 } else { 6 };
+            let bar_gap = if area.width < 60 { 0 } else { 1 };
+
+            // Find max value in minutes
+            let max_minutes = bar_data.iter().map(|(_, v)| *v).max().unwrap_or(0);
+
+            // Calculate scale: minimum 8h (480 min), or max_value + 2h (120 min)
+            // This ensures bars never reach the top
+            let scale_minutes = if max_minutes <= 480 {
+                480  // 8h default for regular workday
+            } else {
+                // Round up to next hour and add 2h buffer
+                ((max_minutes / 60) + 3) * 60
+            };
+
+            let scale_hours = scale_minutes / 60;
+
+            // Create bars with category-based colors and hour labels
+            let bars: Vec<Bar> = bar_data
+                .iter()
+                .map(|(app, value_minutes)| {
+                    let (_, color) = self.get_app_category(app);
+                    let hours = value_minutes / 60;
+                    let mins = value_minutes % 60;
+
+                    // Format label: show hours only, or hours + minutes
+                    let value_label = if mins == 0 {
+                        format!("{}h", hours)
+                    } else if hours == 0 {
+                        format!("{}m", mins)
+                    } else {
+                        format!("{}h{}m", hours, mins)
+                    };
+
+                    Bar::default()
+                        .value(*value_minutes)
+                        .label(Line::from(format!("{}", app)))
+                        .text_value(value_label)
+                        .style(Style::default().fg(color))
+                        .value_style(Style::default().fg(Color::White))
+                })
+                .collect();
+
+            let chart_title = format!("{} (scale: 0-{}h)", title, scale_hours);
+
             let barchart = BarChart::default()
-                .block(Block::default().borders(Borders::ALL).title(title))
-                .bar_width(6)
-                .bar_gap(1)
-                .bar_style(Style::default().fg(Color::Cyan))
-                .value_style(Style::default().fg(Color::White))
-                .data(&bar_data);
-            f.render_widget(barchart, left_chunks[0]);
+                .block(Block::default().borders(Borders::ALL).title(chart_title))
+                .bar_width(bar_width)
+                .bar_gap(bar_gap)
+                .max(scale_minutes)  // Set max scale directly instead of padding bar
+                .data(BarGroup::default().bars(&bars));
+            f.render_widget(barchart, area);
         }
+    }
 
-        // LEFT MIDDLE: Timeline
-        self.draw_timeline(f, left_chunks[1]);
+    fn draw_stats(&self, f: &mut Frame, area: ratatui::layout::Rect, data: &[(String, i64)]) {
+        // Adaptive number of items based on available height
+        let max_items = (area.height.saturating_sub(2) as usize).min(15).max(3);
 
-        // LEFT BOTTOM: Detailed stats list
         let stats_items: Vec<ListItem> = data
             .iter()
-            .take(8)
+            .take(max_items)
             .map(|(app, duration)| {
                 let hours = duration / 3600;
                 let minutes = (duration % 3600) / 60;
-                let display = if hours > 0 {
-                    format!("  {} - {}h {}m", app, hours, minutes)
+
+                // Truncate app name if terminal is narrow
+                let app_display = if area.width < 40 {
+                    if app.len() > 15 {
+                        format!("{}...", &app[..12])
+                    } else {
+                        app.clone()
+                    }
                 } else {
-                    format!("  {} - {}m", app, minutes)
+                    app.clone()
+                };
+
+                let display = if hours > 0 {
+                    format!("  {} - {}h {}m", app_display, hours, minutes)
+                } else {
+                    format!("  {} - {}m", app_display, minutes)
                 };
                 ListItem::new(Line::from(display))
             })
@@ -377,28 +625,62 @@ impl App {
 
         let stats_list = List::new(stats_items)
             .block(Block::default().borders(Borders::ALL).title(stats_title));
-        f.render_widget(stats_list, left_chunks[2]);
+        f.render_widget(stats_list, area);
+    }
 
-        // RIGHT TOP: Session History
+    fn draw_history(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        // Adaptive number of items based on available height
+        let max_items = (area.height.saturating_sub(2) as usize).min(30).max(5);
+
         let history_items: Vec<ListItem> = self
             .history
             .iter()
-            .take(20)
+            .take(max_items)
             .map(|session| {
                 let minutes = session.duration / 60;
                 let time = session.start_time.format("%H:%M");
-                let display = format!("{} - {}: {}m", time, session.app_name, minutes);
+
+                // Create display name with window name if available
+                let display_name = if let Some(window_name) = &session.window_name {
+                    if area.width < 40 {
+                        // Truncate both app and window names for narrow terminals
+                        let app_short = if session.app_name.len() > 8 {
+                            format!("{}...", &session.app_name[..5])
+                        } else {
+                            session.app_name.clone()
+                        };
+                        let window_short = if window_name.len() > 8 {
+                            format!("{}...", &window_name[..5])
+                        } else {
+                            window_name.clone()
+                        };
+                        format!("{} ({})", app_short, window_short)
+                    } else {
+                        format!("{} ({})", session.app_name, window_name)
+                    }
+                } else {
+                    // Fallback to just app name if no window name
+                    if area.width < 40 {
+                        if session.app_name.len() > 12 {
+                            format!("{}...", &session.app_name[..9])
+                        } else {
+                            session.app_name.clone()
+                        }
+                    } else {
+                        session.app_name.clone()
+                    }
+                };
+
+                let display = format!("{} - {}: {}m", time, display_name, minutes);
                 ListItem::new(Line::from(display))
             })
             .collect();
         let history_list = List::new(history_items)
             .block(Block::default().borders(Borders::ALL).title("📜 Session History"));
-        f.render_widget(history_list, right_chunks[0]);
-
-        // RIGHT BOTTOM: Pie Chart (Categories)
-        self.draw_pie_chart(f, right_chunks[1], data);
+        f.render_widget(history_list, area);
     }
 
+    // Pattern matching for determining category from app name
     fn categorize_app(app: &str) -> (&'static str, Color) {
         let app_lower = app.to_lowercase();
         if app_lower.contains("code") || app_lower.contains("vim") || app_lower.contains("nvim") ||
@@ -407,16 +689,43 @@ impl App {
             ("💻 Development", Color::Cyan)
         } else if app_lower.contains("browser") || app_lower.contains("chrome") || app_lower.contains("firefox") ||
                   app_lower.contains("brave") || app_lower.contains("edge") {
-            ("🌐 Browsing", Color::Blue)
+            ("🌐 Browsing", Color::LightBlue)
         } else if app_lower.contains("slack") || app_lower.contains("zoom") || app_lower.contains("teams") ||
                   app_lower.contains("discord") || app_lower.contains("telegram") {
-            ("💬 Communication", Color::Green)
+            ("💬 Communication", Color::LightGreen)
         } else if app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("music") {
-            ("🎵 Media", Color::Magenta)
+            ("🎵 Media", Color::LightMagenta)
         } else if app_lower.contains("nautilus") || app_lower.contains("files") || app_lower.contains("dolphin") {
-            ("📁 Files", Color::Yellow)
+            ("📁 Files", Color::LightYellow)
         } else {
-            ("📦 Other", Color::Gray)
+            ("📦 Other", Color::White)
+        }
+    }
+
+    // Get category and color for an app, using stored category if available
+    fn get_app_category(&self, app: &str) -> (&'static str, Color) {
+        // First try to find stored category in history
+        for session in &self.history {
+            if session.app_name == app {
+                if let Some(stored_category) = &session.category {
+                    // Map stored category string to emoji+name and color
+                    return Self::category_from_string(stored_category);
+                }
+            }
+        }
+        // Fall back to pattern matching for backward compatibility
+        Self::categorize_app(app)
+    }
+
+    // Convert stored category string back to emoji+name and color
+    fn category_from_string(category: &str) -> (&'static str, Color) {
+        match category {
+            "💻 Development" => ("💻 Development", Color::Cyan),
+            "🌐 Browsing" => ("🌐 Browsing", Color::LightBlue),
+            "💬 Communication" => ("💬 Communication", Color::LightGreen),
+            "🎵 Media" => ("🎵 Media", Color::LightMagenta),
+            "📁 Files" => ("📁 Files", Color::LightYellow),
+            _ => ("📦 Other", Color::White),
         }
     }
 
@@ -426,7 +735,7 @@ impl App {
         let total: i64 = data.iter().map(|(_, d)| d).sum();
 
         for (app, duration) in data {
-            let (category, color) = Self::categorize_app(app);
+            let (category, color) = self.get_app_category(app);
             let entry = categories.entry(category).or_insert((0, color));
             entry.0 += duration;
         }
@@ -470,24 +779,73 @@ impl App {
         let mut timeline_lines = vec![];
         timeline_lines.push(Line::from(""));
 
-        // Take last 8 sessions for timeline
-        for session in self.history.iter().take(8) {
-            let (_, color) = Self::categorize_app(&session.app_name);
+        // Adaptive: show more items if we have height, fewer if narrow
+        let max_timeline_items = (area.height.saturating_sub(3) as usize).min(12).max(4);
+        let max_bar_length = if area.width < 60 { 10 } else if area.width < 100 { 15 } else { 20 };
+
+        for session in self.history.iter().take(max_timeline_items) {
+            // Use stored category if available, otherwise pattern match
+            let (_, color) = if let Some(stored_category) = &session.category {
+                Self::category_from_string(stored_category)
+            } else {
+                Self::categorize_app(&session.app_name)
+            };
             let time = session.start_time.format("%H:%M");
             let duration_min = session.duration / 60;
-            let bar_length = (duration_min / 2).max(1).min(15) as usize; // Scale for visual
+
+            // Adaptive bar length based on available width
+            let bar_length = ((duration_min / 2).max(1) as usize).min(max_bar_length);
             let bar = "▓".repeat(bar_length);
+
+            // Truncate app name if terminal is narrow
+            let app_display = if area.width < 60 {
+                if session.app_name.len() > 12 {
+                    format!("{}...", &session.app_name[..9])
+                } else {
+                    session.app_name.clone()
+                }
+            } else {
+                session.app_name.clone()
+            };
 
             timeline_lines.push(Line::from(vec![
                 ratatui::text::Span::raw(format!("{} ", time)),
                 ratatui::text::Span::styled(bar, Style::default().fg(color)),
-                ratatui::text::Span::raw(format!(" {} ({}m)", session.app_name, duration_min)),
+                ratatui::text::Span::raw(format!(" {} ({}m)", app_display, duration_min)),
             ]));
         }
 
         let timeline = Paragraph::new(timeline_lines)
             .block(Block::default().borders(Borders::ALL).title("⏱️  Timeline"));
         f.render_widget(timeline, area);
+    }
+
+    fn draw_afk(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        let afk_threshold_secs = 300; // 5 minutes
+        let is_afk = self.is_afk(afk_threshold_secs);
+        let status = if is_afk { "AFK" } else { "Active" };
+        let color = if is_afk { Color::Red } else { Color::Green };
+        let last_input = *self.last_input.lock().unwrap();
+        let idle_duration = Local::now().signed_duration_since(last_input).num_seconds();
+        let idle_minutes = idle_duration / 60;
+        let idle_seconds = idle_duration % 60;
+
+        let afk_lines = vec![
+            Line::from(""),
+            Line::from(vec![
+                ratatui::text::Span::styled("Status: ", Style::default()),
+                ratatui::text::Span::styled(status, Style::default().fg(color)),
+            ]),
+            Line::from(""),
+            Line::from(format!("Idle for: {}m {}s", idle_minutes, idle_seconds)),
+            Line::from(""),
+            Line::from("Detects keyboard/mouse activity"),
+            Line::from("AFK if idle > 5 minutes"),
+        ];
+
+        let afk_paragraph = Paragraph::new(afk_lines)
+            .block(Block::default().borders(Borders::ALL).title("🚫 AFK Status"));
+        f.render_widget(afk_paragraph, area);
     }
 
     async fn start_tracking(&mut self) -> Result<()> {
@@ -497,13 +855,16 @@ impl App {
             detected
         });
         let window_name = self.monitor.get_active_window_name().ok();
-        let start_time = Utc::now();
+        let start_time = Local::now();
+        // Determine category from original app name
+        let (category_name, _) = Self::categorize_app(&app_name);
         let session = Session {
             id: None,
             app_name: app_name.clone(),
             window_name: window_name.clone(),
             start_time,
             duration: 0,
+            category: Some(category_name.to_string()),
         };
         self.current_session = Some(session);
         self.current_window = window_name;
@@ -514,7 +875,7 @@ impl App {
     async fn switch_app(&mut self, new_app: String) -> Result<()> {
         // End current session
         if let Some(mut session) = self.current_session.take() {
-            session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
+            session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
             if session.duration >= 10 {
                 if let Err(e) = self.database.insert_session(&session).await {
                     log::error!("Failed to save session: {}", e);
@@ -527,13 +888,16 @@ impl App {
         }
         // Start new session
         let window_name = self.monitor.get_active_window_name().ok();
-        let start_time = Utc::now();
+        let start_time = Local::now();
+        // Determine category from original app name
+        let (category_name, _) = Self::categorize_app(&new_app);
         let session = Session {
             id: None,
             app_name: new_app.clone(),
             window_name: window_name.clone(),
             start_time,
             duration: 0,
+            category: Some(category_name.to_string()),
         };
         self.current_session = Some(session);
         self.current_app = new_app.clone();
@@ -544,7 +908,7 @@ impl App {
 
     async fn end_session(&mut self) -> Result<()> {
         if let Some(mut session) = self.current_session.take() {
-            session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
+            session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
             if session.duration >= 10 {
                 self.database.insert_session(&session).await.unwrap();
                 self.history = self.database.get_recent_sessions(30).await.unwrap();
@@ -595,6 +959,11 @@ impl App {
 
     fn view_logs(&mut self) {
         self.state = AppState::ViewingLogs;
+    }
+
+    fn is_afk(&self, threshold_secs: i64) -> bool {
+        let last = *self.last_input.lock().unwrap();
+        Local::now().signed_duration_since(last).num_seconds() > threshold_secs
     }
 
     async fn handle_input(&mut self) -> Result<()> {

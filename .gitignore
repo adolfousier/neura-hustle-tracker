@@ -3,7 +3,10 @@ CHANGES.md
 IMPLEMENTATION_PLAN.md
 /plans
 /docker/.env
-
+/.claude
+PLAN.md
+install-extension.sh
+commands.md
 
 client/target
 client/node_modules

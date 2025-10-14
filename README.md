@@ -1,46 +1,73 @@
-# Neura Husle Tracker Linux x11 App
+# Neura Hustle Tracker
 
-A Rust-based time-tracking tool for monitoring app usage during work sessions. Built with Ratatui for the UI and Postgres 18 for history.
+A cross-platform Rust-based time-tracking tool for monitoring productivity through app usage during work sessions. Built with Ratatui for the UI, and Postgres for history. Supports Windows, MacOS, and Linux.
 
 ![Demo](src/screenshots/demo.png)
 
+## Features
+- **Interactive Dashboard**: Comprehensive data visualization with bar charts, timelines, and statistics
+- **App Categorization**: Automatic categorization of apps (Development, Browsing, Communication, Media, Files, Other) with color coding
+- **Fully Responsive Design**: Adaptive layout that adjusts to terminal size for optimal viewing on any device
+- **Cross-Platform Support**: Works on Linux (X11/Wayland), macOS, and Windows
+- **Commands Menu**: Popup menu (Shift+C) showing all available shortcuts and commands
+- **Multiple Views**: Daily, Weekly, Monthly, and History views with Tab navigation
+- **App Renaming**: Interactive renaming of tracked applications
+- **Session Management**: Manual start/end sessions with automatic saving
+- **Real-time Tracking**: Live monitoring of active applications and usage time
+- **PostgreSQL Storage**: Persistent data storage with automatic migrations
+
 ## Prerequisites
-- **Desktop Environment**: This app requires a GUI desktop environment (GNOME, KDE, etc.) to detect active applications. It does not work in terminal-only or headless environments.
 - Rust 1.90+
 - Docker and Docker Compose (for easy Postgres setup)
-- For X11: xdotool (`sudo apt-get install xdotool`)
-- For Wayland/GNOME: GNOME Shell extension (installed automatically by install-extension.sh)
+- **Platform-specific requirements**:
+  - **Linux**: Requires a GUI desktop environment (GNOME, KDE, etc.) to detect active applications. Works with X11 and Wayland.
+  - **macOS**: Screen Recording permission may be required for window titles
+  - **Windows**: No additional permissions needed
 
 ## Setup
 
-### Option 1: Using Docker for DB + Host App (Recommended)
+### Using Docker for Database (Recommended)
 1. Clone or copy the code.
-2. Install dependencies:
-   - For X11: `sudo apt-get install xdotool`
-   - For Wayland/GNOME: Run `./install-extension.sh`, then **restart GNOME Shell** by pressing Alt+F2, typing `r`, and pressing Enter
-3. Create a `.env` file in the project root (copy from `.env.example` and fill in your values):
-   ```
-   POSTGRES_USERNAME=your_actual_username
-   POSTGRES_PASSWORD=your_actual_password
-   DATABASE_URL=postgres://your_actual_username:your_actual_password@localhost:5432/time_tracker
-   ```
-4. Start PostgreSQL: `docker-compose up -d postgres`
-5. Build the app: `cargo build --release`
-6. Run on host: `./target/release/time_tracker`
-7. To stop: `docker-compose down`
+2. Create a `.env` file in the project root (copy from `.env.example` and fill in your values):
+    ```
+    POSTGRES_USERNAME=your_actual_username
+    POSTGRES_PASSWORD=your_actual_password
+    DATABASE_URL=postgres://your_actual_username:your_actual_password@localhost:5432/time_tracker
+    ```
+3. Start PostgreSQL: `docker-compose up -d postgres`
+4. Build the app: `cargo build --release`
+5. Run: `./target/release/time_tracker`
+6. To stop: `docker-compose down`
 
-### Option 2: Local PostgreSQL
-1. Install and start PostgreSQL 18 locally.
+### Using Local PostgreSQL
+1. Install and start PostgreSQL locally.
 2. Create database: `CREATE DATABASE time_tracker;`
 3. Create a `.env` file with your local credentials.
 4. Build: `cargo build --release`
 5. Run: `./target/release/time_tracker`
+
+### Windows Setup
+1. Install Rust from https://rustup.rs/
+2. Install Docker Desktop for Windows
+3. Follow the Docker database setup above
+4. For window/app detection, the app uses Windows API and typically requires no special permissions. If detection fails, try running the terminal as administrator or check Windows Defender/Firewall settings.
+5. Build: `cargo build --release`
+6. Run: `.\target\release\time_tracker.exe`
+
+### macOS Setup
+1. Install Rust from https://rustup.rs/
+2. Install Docker Desktop for Mac
+3. Follow the Docker database setup above
+4. For window title detection, grant Screen Recording permission to Terminal in System Preferences > Security & Privacy > Privacy > Screen Recording
+5. Build: `cargo build --release`
+6. Run: `./target/release/time_tracker`
 
 ## Usage
 The app provides a terminal-based interface for time tracking with an interactive dashboard.
 
 ### Commands
 - **Tab**: Switch between dashboard views (Daily/Weekly/Monthly/History)
+- **Shift+C**: Open commands popup menu with all available shortcuts
 - **r**: Rename apps/tabs (arrow keys to navigate, Enter to select)
 - **e**: End the current session (saves to database)
 - **m**: Manually set app name (if auto-detection fails)
@@ -55,11 +82,16 @@ Sessions automatically track the active application and duration. Data is saved 
 ## Architecture
 The application is organized into modular services:
 - `database/`: PostgreSQL connection and queries
-- `tracker/`: Application monitoring
-- `ui/`: Ratatui-based terminal interface
+- `tracker/`: Cross-platform application monitoring using active-win-pos-rs
+- `ui/`: Ratatui-based terminal interface (works on Windows, macOS, Linux)
 - `config/`: Configuration management
 - `models/`: Data structures
 - `utils/`: Helper utilities
+
+## Supported Platforms
+- **Linux**: X11 and Wayland support
+- **macOS**: Full support with Accessibility API
+- **Windows**: Full support with Windows API
 
 ## Testing
 Run `cargo test` to execute unit tests for database operations and core functionality.
