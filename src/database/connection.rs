@@ -71,12 +71,39 @@ impl Database {
         Ok(rows)
     }
 
-    pub async fn update_session_name(&self, id: i32, new_name: String) -> Result<()> {
-        sqlx::query("UPDATE sessions SET app_name = $1 WHERE id = $2")
+    pub async fn rename_app(&self, old_name: &str, new_name: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET app_name = $1 WHERE app_name = $2")
             .bind(new_name)
-            .bind(id)
+            .bind(old_name)
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn get_daily_usage(&self) -> Result<Vec<(String, i64)>> {
+        let rows = sqlx::query!(
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE DATE(start_time) = CURRENT_DATE GROUP BY app_name ORDER BY total_duration DESC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|r| (r.app_name, r.total_duration.unwrap_or(0))).collect())
+    }
+
+    pub async fn get_weekly_usage(&self) -> Result<Vec<(String, i64)>> {
+        let rows = sqlx::query!(
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '7 days' GROUP BY app_name ORDER BY total_duration DESC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|r| (r.app_name, r.total_duration.unwrap_or(0))).collect())
+    }
+
+    pub async fn get_monthly_usage(&self) -> Result<Vec<(String, i64)>> {
+        let rows = sqlx::query!(
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '30 days' GROUP BY app_name ORDER BY total_duration DESC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.into_iter().map(|r| (r.app_name, r.total_duration.unwrap_or(0))).collect())
     }
 }

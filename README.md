@@ -2,6 +2,8 @@
 
 A Rust-based time-tracking tool for monitoring app usage during work sessions. Built with Ratatui for the UI and Postgres 18 for history.
 
+![Demo](src/screenshots/demo.png)
+
 ## Prerequisites
 - **Desktop Environment**: This app requires a GUI desktop environment (GNOME, KDE, etc.) to detect active applications. It does not work in terminal-only or headless environments.
 - Rust 1.90+
@@ -35,18 +37,18 @@ A Rust-based time-tracking tool for monitoring app usage during work sessions. B
 5. Run: `./target/release/time_tracker`
 
 ## Usage
-The app provides a terminal-based interface for time tracking.
+The app provides a terminal-based interface for time tracking with an interactive dashboard.
 
 ### Commands
+- **Tab**: Switch between dashboard views (Daily/Weekly/Monthly/History)
+- **r**: Rename apps/tabs (arrow keys to navigate, Enter to select)
 - **e**: End the current session (saves to database)
-- **r**: Rename current session
 - **m**: Manually set app name (if auto-detection fails)
 - **u**: Update current app detection
-- **v**: View session history
 - **l**: View application logs
 - **q**: Quit the application
 
-**Note**: The app starts tracking automatically when launched. Use the above commands to control it.
+**Note**: The app starts tracking automatically when launched and displays visual analytics with bar charts and detailed statistics.
 
 Sessions automatically track the active application and duration. Data is saved to Postgres every 10 minutes automatically, or manually when ending a session.
 

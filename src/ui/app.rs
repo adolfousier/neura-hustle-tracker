@@ -6,7 +6,8 @@ use crossterm::execute;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{BarChart, Block, Borders, List, ListItem, Paragraph};
+use ratatui::style::{Color, Style};
 use ratatui::{Frame, Terminal};
 use std::io;
 use std::time::{Duration, Instant};
@@ -17,17 +18,25 @@ use crate::database::connection::Database;
 use crate::models::session::Session;
 use crate::tracker::monitor::AppMonitor;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ViewMode {
+    Daily,
+    Weekly,
+    Monthly,
+    History,
+}
+
 #[derive(Debug, Clone)]
 pub enum InputAction {
-    Rename,
+    RenameApp { old_name: String },
     SetAppName,
 }
 
 #[derive(Debug, Clone)]
 pub enum AppState {
-    Idle,
-    ViewingHistory,
+    Dashboard { view_mode: ViewMode },
     ViewingLogs,
+    SelectingApp { selected_index: usize },
     Input { prompt: String, buffer: String, action: InputAction },
 }
 
@@ -37,6 +46,9 @@ pub struct App {
     monitor: AppMonitor,
     history: Vec<Session>,
     usage: Vec<(String, i64)>,
+    daily_usage: Vec<(String, i64)>,
+    weekly_usage: Vec<(String, i64)>,
+    monthly_usage: Vec<(String, i64)>,
     logs: Vec<String>,
     manual_app_name: Option<String>,
     current_app: String,
@@ -48,11 +60,14 @@ impl App {
     pub fn new(database: Database) -> Self {
         let monitor = AppMonitor::new();
         Self {
-            state: AppState::Idle,
+            state: AppState::Dashboard { view_mode: ViewMode::Daily },
             database,
             monitor,
             history: vec![],
             usage: vec![],
+            daily_usage: vec![],
+            weekly_usage: vec![],
+            monthly_usage: vec![],
             logs: vec![],
             manual_app_name: None,
             current_app: "unknown".to_string(),
@@ -70,6 +85,9 @@ impl App {
         // Load history and usage
         self.history = self.database.get_recent_sessions(10).await.unwrap();
         self.usage = self.database.get_app_usage().await.unwrap();
+        self.daily_usage = self.database.get_daily_usage().await.unwrap();
+        self.weekly_usage = self.database.get_weekly_usage().await.unwrap();
+        self.monthly_usage = self.database.get_monthly_usage().await.unwrap();
 
         eprintln!("Enabling raw mode...");
         enable_raw_mode().unwrap();
@@ -97,18 +115,34 @@ impl App {
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
                     match &mut self.state {
-                        AppState::ViewingHistory => {
-                            match key.code {
-                                KeyCode::Char('q') => break,
-                                KeyCode::Esc => self.state = AppState::Idle,
-                                _ => self.state = AppState::Idle,
-                            }
-                        }
+
                         AppState::ViewingLogs => {
                             match key.code {
                                 KeyCode::Char('q') => break,
-                                KeyCode::Esc => self.state = AppState::Idle,
-                                _ => self.state = AppState::Idle,
+                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                _ => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                            }
+                        }
+
+                        AppState::SelectingApp { selected_index } => {
+                            match key.code {
+                                KeyCode::Up => {
+                                    if *selected_index > 0 {
+                                        *selected_index -= 1;
+                                    }
+                                }
+                                KeyCode::Down => {
+                                    if *selected_index < self.usage.len().saturating_sub(1) {
+                                        *selected_index += 1;
+                                    }
+                                }
+                                KeyCode::Enter => {
+                                    if let Some((app_name, _)) = self.usage.get(*selected_index) {
+                                        self.start_rename_app(app_name.clone());
+                                    }
+                                }
+                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                _ => {}
                             }
                         }
 
@@ -116,20 +150,27 @@ impl App {
                             match key.code {
                                 KeyCode::Char(c) => buffer.push(c),
                                 KeyCode::Backspace => { buffer.pop(); }
-                                KeyCode::Enter => self.handle_input(),
-                                KeyCode::Esc => self.state = AppState::Idle,
+                                KeyCode::Enter => self.handle_input().await?,
+                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
                                 _ => {}
                             }
                         }
-                         _ => {
+                        AppState::Dashboard { view_mode } => {
                             match key.code {
                                 KeyCode::Char('q') => break,
                                 KeyCode::Char('e') => self.end_session().await?,
-                                KeyCode::Char('r') => self.start_rename(),
+                                KeyCode::Char('r') => self.start_app_selection(),
                                 KeyCode::Char('m') => self.start_set_app_name(),
                                 KeyCode::Char('u') => self.update_current_app(),
-                                KeyCode::Char('v') => self.view_history().await,
                                 KeyCode::Char('l') => self.view_logs(),
+                                KeyCode::Tab => {
+                                    *view_mode = match view_mode {
+                                        ViewMode::Daily => ViewMode::Weekly,
+                                        ViewMode::Weekly => ViewMode::Monthly,
+                                        ViewMode::Monthly => ViewMode::History,
+                                        ViewMode::History => ViewMode::Daily,
+                                    };
+                                }
                                 _ => {}
                             }
                         }
@@ -176,50 +217,31 @@ impl App {
         let size = f.area();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1)].as_ref())
+            .constraints([Constraint::Length(3), Constraint::Min(1), Constraint::Length(3)].as_ref())
             .split(size);
 
+        // Status bar
         let status = match &self.state {
-            AppState::Idle => {
+            AppState::Dashboard { .. } => {
                 if let Some(session) = &self.current_session {
                     let duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
-                    let display_name = if let Some(window) = &session.window_name {
-                        format!("{} - {}", session.app_name, window)
-                    } else {
-                        session.app_name.clone()
-                    };
+                    let display_name = self.manual_app_name.as_ref().unwrap_or(&session.app_name);
                     format!("Tracking: {} for {}s", display_name, duration)
                 } else {
                     format!("Not tracking - Current app: {}", self.current_app)
                 }
             }
-            AppState::ViewingHistory => "Viewing History - Press any key to return".to_string(),
             AppState::ViewingLogs => "Viewing Logs - Press any key to return".to_string(),
-            AppState::Input { .. } => "Input mode - Enter to confirm, Esc to cancel".to_string(),
+            AppState::SelectingApp { .. } => "Select app to rename (↑/↓ + Enter) or Esc to cancel".to_string(),
+            AppState::Input { prompt, buffer, .. } => format!("{}: {}", prompt, buffer),
         };
 
         let status_widget = Paragraph::new(status)
             .block(Block::default().borders(Borders::ALL).title("Status"));
         f.render_widget(status_widget, chunks[0]);
 
+        // Main content area
         match &self.state {
-            AppState::ViewingHistory => {
-                let items: Vec<ListItem> = self
-                    .history
-                    .iter()
-                    .map(|s| {
-                        let display = if let Some(window) = &s.window_name {
-                            format!("{} ({}) - {}s", s.app_name, window, s.duration)
-                        } else {
-                            format!("{} - {}s", s.app_name, s.duration)
-                        };
-                        ListItem::new(Line::from(display))
-                    })
-                    .collect();
-                let list = List::new(items)
-                    .block(Block::default().borders(Borders::ALL).title("Recent Sessions"));
-                f.render_widget(list, chunks[1]);
-            }
             AppState::ViewingLogs => {
                 let log_items: Vec<ListItem> = self
                     .logs
@@ -233,28 +255,127 @@ impl App {
                 f.render_widget(log_list, chunks[1]);
             }
 
-            AppState::Input { prompt, buffer, .. } => {
-                let input_display = format!("{}: {}", prompt, buffer);
-                let input_widget = Paragraph::new(input_display)
-                    .block(Block::default().borders(Borders::ALL).title("Input"));
-                f.render_widget(input_widget, chunks[1]);
-            }
-            AppState::Idle => {
+            AppState::SelectingApp { selected_index } => {
                 let usage_items: Vec<ListItem> = self
                     .usage
                     .iter()
+                    .enumerate()
                     .take(10)
-                    .map(|(app, duration)| {
+                    .map(|(i, (app, duration))| {
                         let minutes = duration / 60;
-                        let display = format!("{}: {}m", app, minutes);
+                        let prefix = if i == *selected_index { "→ " } else { "  " };
+                        let display = format!("{}{}: {}m", prefix, app, minutes);
                         ListItem::new(Line::from(display))
                     })
                     .collect();
                 let usage_list = List::new(usage_items)
-                    .block(Block::default().borders(Borders::ALL).title("App Usage"));
+                    .block(Block::default().borders(Borders::ALL).title("App Usage - Select to Rename"));
                 f.render_widget(usage_list, chunks[1]);
             }
+
+            AppState::Input { .. } => {
+                // Input is shown in status bar, show daily usage as default
+                self.draw_dashboard(f, chunks[1], &ViewMode::Daily);
+            }
+
+            AppState::Dashboard { view_mode } => {
+                self.draw_dashboard(f, chunks[1], view_mode);
+            }
         }
+
+        // Commands bar at bottom
+        let commands = "[Tab] Switch View | [r] Rename app | [e] End | [l] Logs | [q] Quit";
+        let commands_widget = Paragraph::new(commands)
+            .block(Block::default().borders(Borders::ALL).title("Commands"));
+        f.render_widget(commands_widget, chunks[2]);
+    }
+
+    fn draw_dashboard(&self, f: &mut Frame, area: ratatui::layout::Rect, view_mode: &ViewMode) {
+        let (data, title) = match view_mode {
+            ViewMode::Daily => (&self.daily_usage, "📊 Daily Usage"),
+            ViewMode::Weekly => (&self.weekly_usage, "📊 Weekly Usage (7 days)"),
+            ViewMode::Monthly => (&self.monthly_usage, "📊 Monthly Usage (30 days)"),
+            ViewMode::History => {
+                // Show recent sessions history
+                let history_items: Vec<ListItem> = self
+                    .history
+                    .iter()
+                    .take(20)
+                    .map(|session| {
+                        let minutes = session.duration / 60;
+                        let time = session.start_time.format("%Y-%m-%d %H:%M");
+                        let display = format!("{} - {}: {}m", time, session.app_name, minutes);
+                        ListItem::new(Line::from(display))
+                    })
+                    .collect();
+                let history_list = List::new(history_items)
+                    .block(Block::default().borders(Borders::ALL).title("📜 Session History"));
+                f.render_widget(history_list, area);
+                return;
+            }
+        };
+
+        // Create bar chart data
+        let bar_data: Vec<(&str, u64)> = data
+            .iter()
+            .take(10)
+            .map(|(app, duration)| {
+                let minutes = (duration / 60) as u64;
+                (app.as_str(), minutes)
+            })
+            .collect();
+
+        if bar_data.is_empty() {
+            let empty_msg = Paragraph::new("No data available yet. Start tracking!")
+                .block(Block::default().borders(Borders::ALL).title(title));
+            f.render_widget(empty_msg, area);
+            return;
+        }
+
+        // Split area for chart and stats
+        let content_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
+            .split(area);
+
+        // Render bar chart
+        let barchart = BarChart::default()
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .bar_width(8)
+            .bar_gap(1)
+            .bar_style(Style::default().fg(Color::Cyan))
+            .value_style(Style::default().fg(Color::White))
+            .data(&bar_data);
+        f.render_widget(barchart, content_chunks[0]);
+
+        // Render detailed stats list
+        let stats_items: Vec<ListItem> = data
+            .iter()
+            .take(15)
+            .map(|(app, duration)| {
+                let hours = duration / 3600;
+                let minutes = (duration % 3600) / 60;
+                let display = if hours > 0 {
+                    format!("  {} - {}h {}m", app, hours, minutes)
+                } else {
+                    format!("  {} - {}m", app, minutes)
+                };
+                ListItem::new(Line::from(display))
+            })
+            .collect();
+
+        let total_duration: i64 = data.iter().map(|(_, d)| d).sum();
+        let total_hours = total_duration / 3600;
+        let total_minutes = (total_duration % 3600) / 60;
+        let stats_title = if total_hours > 0 {
+            format!("📈 Detailed Stats (Total: {}h {}m)", total_hours, total_minutes)
+        } else {
+            format!("📈 Detailed Stats (Total: {}m)", total_minutes)
+        };
+
+        let stats_list = List::new(stats_items)
+            .block(Block::default().borders(Borders::ALL).title(stats_title));
+        f.render_widget(stats_list, content_chunks[1]);
     }
 
     async fn start_tracking(&mut self) -> Result<()> {
@@ -275,7 +396,6 @@ impl App {
         self.current_session = Some(session);
         self.current_window = window_name;
         self.logs.push(format!("Started tracking: {}", app_name));
-        self.state = AppState::Idle; // Keep idle to show usage
         Ok(())
     }
 
@@ -325,12 +445,7 @@ impl App {
         Ok(())
     }
 
-    async fn view_history(&mut self) {
-        self.history = self.database.get_recent_sessions(10).await.unwrap();
-        // Sort by duration descending (most used first)
-        self.history.sort_by(|a, b| b.duration.cmp(&a.duration));
-        self.state = AppState::ViewingHistory;
-    }
+
 
 
 
@@ -342,14 +457,18 @@ impl App {
         };
     }
 
-    fn start_rename(&mut self) {
-        if self.current_session.is_some() {
-            self.state = AppState::Input {
-                prompt: "Enter new session name".to_string(),
-                buffer: String::new(),
-                action: InputAction::Rename,
-            };
+    fn start_app_selection(&mut self) {
+        if !self.usage.is_empty() {
+            self.state = AppState::SelectingApp { selected_index: 0 };
         }
+    }
+
+    fn start_rename_app(&mut self, old_name: String) {
+        self.state = AppState::Input {
+            prompt: format!("Rename '{}' to", old_name),
+            buffer: String::new(),
+            action: InputAction::RenameApp { old_name },
+        };
     }
 
     fn update_current_app(&mut self) {
@@ -363,25 +482,39 @@ impl App {
         self.state = AppState::ViewingLogs;
     }
 
-    fn handle_input(&mut self) {
+    async fn handle_input(&mut self) -> Result<()> {
         let (buffer, action) = if let AppState::Input { buffer, action, .. } = &self.state {
             (buffer.clone(), action.clone())
         } else {
-            return;
+            return Ok(());
         };
 
         match action {
-            InputAction::Rename => {
-                if let Some(session) = &mut self.current_session {
-                    session.app_name = buffer;
+            InputAction::RenameApp { old_name } => {
+                if !buffer.is_empty() {
+                    // Rename app in database
+                    if let Err(e) = self.database.rename_app(&old_name, &buffer).await {
+                        self.logs.push(format!("Failed to rename app: {}", e));
+                    } else {
+                        // Update current session if it matches
+                        if let Some(session) = &mut self.current_session {
+                            if session.app_name == old_name {
+                                session.app_name = buffer.clone();
+                            }
+                        }
+                        // Refresh usage data
+                        self.usage = self.database.get_app_usage().await?;
+                        self.logs.push(format!("Renamed '{}' to '{}'", old_name, buffer));
+                    }
                 }
-                self.state = AppState::Idle;
+                self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
             }
             InputAction::SetAppName => {
                 self.manual_app_name = Some(buffer.clone());
                 self.current_app = buffer;
-                self.state = AppState::Idle;
+                self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
             }
         }
+        Ok(())
     }
 }
