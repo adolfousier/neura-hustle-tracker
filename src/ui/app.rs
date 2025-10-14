@@ -9,6 +9,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{BarChart, Block, Borders, List, ListItem, Paragraph};
 use ratatui::style::{Color, Style};
 use ratatui::{Frame, Terminal};
+use std::collections::BTreeMap;
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -82,8 +83,8 @@ impl App {
         // Start tracking initial app before enabling raw mode
         self.start_tracking().await?;
 
-        // Load history and usage
-        self.history = self.database.get_recent_sessions(10).await.unwrap();
+        // Load history and usage (load 30 sessions for display)
+        self.history = self.database.get_recent_sessions(30).await.unwrap();
         self.usage = self.database.get_app_usage().await.unwrap();
         self.daily_usage = self.database.get_daily_usage().await.unwrap();
         self.weekly_usage = self.database.get_weekly_usage().await.unwrap();
@@ -199,7 +200,7 @@ impl App {
                     log::error!("Failed to save session on exit: {}", e);
                     self.logs.push(format!("Failed to save session: {}", e));
                 } else {
-                    self.history = self.database.get_recent_sessions(10).await?;
+                    self.history = self.database.get_recent_sessions(30).await?;
                     self.usage = self.database.get_app_usage().await?;
                     self.logs.push(format!("Ended session: {} for {}s", session.app_name, session.duration));
                 }
@@ -291,28 +292,17 @@ impl App {
     }
 
     fn draw_dashboard(&self, f: &mut Frame, area: ratatui::layout::Rect, view_mode: &ViewMode) {
+        // Split into left (chart & timeline & stats) and right (history & pie) - 50/50
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+            .split(area);
+
         let (data, title) = match view_mode {
             ViewMode::Daily => (&self.daily_usage, "📊 Daily Usage"),
             ViewMode::Weekly => (&self.weekly_usage, "📊 Weekly Usage (7 days)"),
             ViewMode::Monthly => (&self.monthly_usage, "📊 Monthly Usage (30 days)"),
-            ViewMode::History => {
-                // Show recent sessions history
-                let history_items: Vec<ListItem> = self
-                    .history
-                    .iter()
-                    .take(20)
-                    .map(|session| {
-                        let minutes = session.duration / 60;
-                        let time = session.start_time.format("%Y-%m-%d %H:%M");
-                        let display = format!("{} - {}: {}m", time, session.app_name, minutes);
-                        ListItem::new(Line::from(display))
-                    })
-                    .collect();
-                let history_list = List::new(history_items)
-                    .block(Block::default().borders(Borders::ALL).title("📜 Session History"));
-                f.render_widget(history_list, area);
-                return;
-            }
+            ViewMode::History => (&self.daily_usage, "📊 Daily Usage"), // Default to daily when in history view
         };
 
         // Create bar chart data
@@ -325,33 +315,45 @@ impl App {
             })
             .collect();
 
+        // LEFT SIDE: Bar Chart + Timeline + Stats
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(40),  // Bar chart
+                Constraint::Percentage(30),  // Timeline
+                Constraint::Percentage(30),  // Detailed stats
+            ].as_ref())
+            .split(main_chunks[0]);
+
+        // RIGHT SIDE: Session History + Pie Chart
+        let right_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
+            .split(main_chunks[1]);
+
+        // LEFT TOP: Bar chart
         if bar_data.is_empty() {
             let empty_msg = Paragraph::new("No data available yet. Start tracking!")
                 .block(Block::default().borders(Borders::ALL).title(title));
-            f.render_widget(empty_msg, area);
-            return;
+            f.render_widget(empty_msg, left_chunks[0]);
+        } else {
+            let barchart = BarChart::default()
+                .block(Block::default().borders(Borders::ALL).title(title))
+                .bar_width(6)
+                .bar_gap(1)
+                .bar_style(Style::default().fg(Color::Cyan))
+                .value_style(Style::default().fg(Color::White))
+                .data(&bar_data);
+            f.render_widget(barchart, left_chunks[0]);
         }
 
-        // Split area for chart and stats
-        let content_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)].as_ref())
-            .split(area);
+        // LEFT MIDDLE: Timeline
+        self.draw_timeline(f, left_chunks[1]);
 
-        // Render bar chart
-        let barchart = BarChart::default()
-            .block(Block::default().borders(Borders::ALL).title(title))
-            .bar_width(8)
-            .bar_gap(1)
-            .bar_style(Style::default().fg(Color::Cyan))
-            .value_style(Style::default().fg(Color::White))
-            .data(&bar_data);
-        f.render_widget(barchart, content_chunks[0]);
-
-        // Render detailed stats list
+        // LEFT BOTTOM: Detailed stats list
         let stats_items: Vec<ListItem> = data
             .iter()
-            .take(15)
+            .take(8)
             .map(|(app, duration)| {
                 let hours = duration / 3600;
                 let minutes = (duration % 3600) / 60;
@@ -375,7 +377,117 @@ impl App {
 
         let stats_list = List::new(stats_items)
             .block(Block::default().borders(Borders::ALL).title(stats_title));
-        f.render_widget(stats_list, content_chunks[1]);
+        f.render_widget(stats_list, left_chunks[2]);
+
+        // RIGHT TOP: Session History
+        let history_items: Vec<ListItem> = self
+            .history
+            .iter()
+            .take(20)
+            .map(|session| {
+                let minutes = session.duration / 60;
+                let time = session.start_time.format("%H:%M");
+                let display = format!("{} - {}: {}m", time, session.app_name, minutes);
+                ListItem::new(Line::from(display))
+            })
+            .collect();
+        let history_list = List::new(history_items)
+            .block(Block::default().borders(Borders::ALL).title("📜 Session History"));
+        f.render_widget(history_list, right_chunks[0]);
+
+        // RIGHT BOTTOM: Pie Chart (Categories)
+        self.draw_pie_chart(f, right_chunks[1], data);
+    }
+
+    fn categorize_app(app: &str) -> (&'static str, Color) {
+        let app_lower = app.to_lowercase();
+        if app_lower.contains("code") || app_lower.contains("vim") || app_lower.contains("nvim") ||
+           app_lower.contains("terminal") || app_lower.contains("alacritty") || app_lower.contains("kitty") ||
+           app_lower.contains("rust") || app_lower.contains("cargo") {
+            ("💻 Development", Color::Cyan)
+        } else if app_lower.contains("browser") || app_lower.contains("chrome") || app_lower.contains("firefox") ||
+                  app_lower.contains("brave") || app_lower.contains("edge") {
+            ("🌐 Browsing", Color::Blue)
+        } else if app_lower.contains("slack") || app_lower.contains("zoom") || app_lower.contains("teams") ||
+                  app_lower.contains("discord") || app_lower.contains("telegram") {
+            ("💬 Communication", Color::Green)
+        } else if app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("music") {
+            ("🎵 Media", Color::Magenta)
+        } else if app_lower.contains("nautilus") || app_lower.contains("files") || app_lower.contains("dolphin") {
+            ("📁 Files", Color::Yellow)
+        } else {
+            ("📦 Other", Color::Gray)
+        }
+    }
+
+    fn draw_pie_chart(&self, f: &mut Frame, area: ratatui::layout::Rect, data: &[(String, i64)]) {
+        // Calculate category totals - using BTreeMap for stable sorted order
+        let mut categories: BTreeMap<&str, (i64, Color)> = BTreeMap::new();
+        let total: i64 = data.iter().map(|(_, d)| d).sum();
+
+        for (app, duration) in data {
+            let (category, color) = Self::categorize_app(app);
+            let entry = categories.entry(category).or_insert((0, color));
+            entry.0 += duration;
+        }
+
+        // Create pie chart representation as text
+        let mut pie_lines = vec![];
+        pie_lines.push(Line::from(""));
+
+        // Sort by duration descending for consistent display
+        let mut sorted_cats: Vec<_> = categories.iter().collect();
+        sorted_cats.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+
+        for (category, (duration, color)) in sorted_cats {
+            if total > 0 {
+                let percentage = (*duration as f64 / total as f64 * 100.0) as u64;
+                let bar_length = (percentage / 5).max(1) as usize; // Scale down for display
+                let bar = "█".repeat(bar_length);
+                let hours = duration / 3600;
+                let minutes = (duration % 3600) / 60;
+                let time_str = if hours > 0 {
+                    format!("{}h {}m", hours, minutes)
+                } else {
+                    format!("{}m", minutes)
+                };
+
+                pie_lines.push(Line::from(vec![
+                    ratatui::text::Span::styled(format!("{} ", category), Style::default().fg(*color)),
+                    ratatui::text::Span::styled(bar, Style::default().fg(*color)),
+                    ratatui::text::Span::raw(format!(" {}% ({})", percentage, time_str)),
+                ]));
+            }
+        }
+
+        let pie_chart = Paragraph::new(pie_lines)
+            .block(Block::default().borders(Borders::ALL).title("🥧 Categories"));
+        f.render_widget(pie_chart, area);
+    }
+
+    fn draw_timeline(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        // Show recent activity timeline with color-coded apps
+        let mut timeline_lines = vec![];
+        timeline_lines.push(Line::from(""));
+
+        // Take last 8 sessions for timeline
+        for session in self.history.iter().take(8) {
+            let (_, color) = Self::categorize_app(&session.app_name);
+            let time = session.start_time.format("%H:%M");
+            let duration_min = session.duration / 60;
+            let bar_length = (duration_min / 2).max(1).min(15) as usize; // Scale for visual
+            let bar = "▓".repeat(bar_length);
+
+            timeline_lines.push(Line::from(vec![
+                ratatui::text::Span::raw(format!("{} ", time)),
+                ratatui::text::Span::styled(bar, Style::default().fg(color)),
+                ratatui::text::Span::raw(format!(" {} ({}m)", session.app_name, duration_min)),
+            ]));
+        }
+
+        let timeline = Paragraph::new(timeline_lines)
+            .block(Block::default().borders(Borders::ALL).title("⏱️  Timeline"));
+        f.render_widget(timeline, area);
     }
 
     async fn start_tracking(&mut self) -> Result<()> {
@@ -435,8 +547,11 @@ impl App {
             session.duration = Utc::now().signed_duration_since(session.start_time).num_seconds();
             if session.duration >= 10 {
                 self.database.insert_session(&session).await.unwrap();
-                self.history = self.database.get_recent_sessions(10).await.unwrap();
+                self.history = self.database.get_recent_sessions(30).await.unwrap();
                 self.usage = self.database.get_app_usage().await.unwrap();
+                self.daily_usage = self.database.get_daily_usage().await.unwrap();
+                self.weekly_usage = self.database.get_weekly_usage().await.unwrap();
+                self.monthly_usage = self.database.get_monthly_usage().await.unwrap();
                 self.logs.push(format!("Ended session: {} for {}s", session.app_name, session.duration));
             } else {
                 self.logs.push(format!("Skipped ending short session: {} for {}s", session.app_name, session.duration));
@@ -502,8 +617,12 @@ impl App {
                                 session.app_name = buffer.clone();
                             }
                         }
-                        // Refresh usage data
+                        // Refresh ALL usage data (all time, daily, weekly, monthly, history)
                         self.usage = self.database.get_app_usage().await?;
+                        self.daily_usage = self.database.get_daily_usage().await?;
+                        self.weekly_usage = self.database.get_weekly_usage().await?;
+                        self.monthly_usage = self.database.get_monthly_usage().await?;
+                        self.history = self.database.get_recent_sessions(30).await?;
                         self.logs.push(format!("Renamed '{}' to '{}'", old_name, buffer));
                     }
                 }
