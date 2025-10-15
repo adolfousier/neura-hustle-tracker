@@ -11,6 +11,7 @@ use ratatui::style::{Color, Style};
 use ratatui::{Frame, Terminal};
 use std::collections::BTreeMap;
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Local};
@@ -49,6 +50,7 @@ pub struct App {
     database: Database,
     monitor: AppMonitor,
     history: Vec<Session>,
+    current_history: Vec<Session>,
     usage: Vec<(String, i64)>,
     daily_usage: Vec<(String, i64)>,
     weekly_usage: Vec<(String, i64)>,
@@ -84,6 +86,7 @@ impl App {
             database,
             monitor,
             history: vec![],
+            current_history: vec![],
             usage: vec![],
             daily_usage: vec![],
             weekly_usage: vec![],
@@ -100,6 +103,13 @@ impl App {
     pub async fn run(&mut self) -> Result<()> {
         log::info!("Starting UI...");
 
+        // Set up signal handlers for graceful shutdown on SIGTERM/SIGINT
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+
+        // Register signal handlers
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&shutdown_flag))?;
+        signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&shutdown_flag))?;
+
         // Start tracking initial app before enabling raw mode
         self.start_tracking().await?;
 
@@ -109,6 +119,7 @@ impl App {
         self.daily_usage = self.database.get_daily_usage().await.unwrap();
         self.weekly_usage = self.database.get_weekly_usage().await.unwrap();
         self.monthly_usage = self.database.get_monthly_usage().await.unwrap();
+        self.current_history = self.history.clone();
 
         eprintln!("Enabling raw mode...");
         enable_raw_mode().unwrap();
@@ -118,10 +129,16 @@ impl App {
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut last_save = Instant::now();
-        let save_interval = Duration::from_secs(600); // 10 minutes
+        let save_interval = Duration::from_secs(3600); // 1 hour
 
         loop {
             terminal.draw(|f| self.draw(f))?;
+
+            // Check for shutdown signal (SIGTERM/SIGINT)
+            if shutdown_flag.load(Ordering::Relaxed) {
+                log::info!("Received shutdown signal, saving and exiting...");
+                break;
+            }
 
             // Check for app or window change
             if let Ok(active_app) = self.monitor.get_active_app() {
@@ -179,20 +196,20 @@ impl App {
                         AppState::Dashboard { view_mode } => {
                             match key.code {
                                 KeyCode::Char('q') => break,
-                                KeyCode::Char('e') => self.end_session().await?,
                                 KeyCode::Char('r') => self.start_app_selection(),
                                 KeyCode::Char('m') => self.start_set_app_name(),
                                 KeyCode::Char('u') => self.update_current_app(),
                                 KeyCode::Char('l') => self.view_logs(),
                                 KeyCode::Char('C') => self.state = AppState::CommandsPopup,  // Shift+C
                                 KeyCode::Tab => {
-                                    *view_mode = match view_mode {
-                                        ViewMode::Daily => ViewMode::Weekly,
-                                        ViewMode::Weekly => ViewMode::Monthly,
-                                        ViewMode::Monthly => ViewMode::History,
-                                        ViewMode::History => ViewMode::Daily,
-                                    };
-                                }
+                                     *view_mode = match view_mode {
+                                         ViewMode::Daily => ViewMode::Weekly,
+                                         ViewMode::Weekly => ViewMode::Monthly,
+                                         ViewMode::Monthly => ViewMode::History,
+                                         ViewMode::History => ViewMode::Daily,
+                                     };
+                                     self.update_history().await?;
+                                 }
                                 _ => {}
                             }
                         }
@@ -200,10 +217,6 @@ impl App {
                             match key.code {
                                 KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
                                 KeyCode::Char('q') => break,
-                                KeyCode::Char('e') => {
-                                    self.end_session().await?;
-                                    self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
-                                }
                                 KeyCode::Char('r') => {
                                     self.start_app_selection();
                                 }
@@ -397,11 +410,10 @@ impl App {
                     Line::from(""),
                     Line::from("  [Tab]  Switch View (Daily/Weekly/Monthly/History)"),
                     Line::from("  [r]    Rename app/tab"),
-                    Line::from("  [e]    End current session"),
                     Line::from("  [m]    Manually set app name"),
                     Line::from("  [u]    Update current app detection"),
                     Line::from("  [l]    View logs"),
-                    Line::from("  [q]    Quit application"),
+                    Line::from("  [q]    Quit application (auto-saves)"),
                     Line::from(""),
                     Line::from("  Press Esc to close this menu"),
                 ];
@@ -633,7 +645,7 @@ impl App {
         let max_items = (area.height.saturating_sub(2) as usize).min(30).max(5);
 
         let history_items: Vec<ListItem> = self
-            .history
+            .current_history
             .iter()
             .take(max_items)
             .map(|session| {
@@ -705,7 +717,7 @@ impl App {
     // Get category and color for an app, using stored category if available
     fn get_app_category(&self, app: &str) -> (&'static str, Color) {
         // First try to find stored category in history
-        for session in &self.history {
+        for session in &self.current_history {
             if session.app_name == app {
                 if let Some(stored_category) = &session.category {
                     // Map stored category string to emoji+name and color
@@ -783,7 +795,7 @@ impl App {
         let max_timeline_items = (area.height.saturating_sub(3) as usize).min(12).max(4);
         let max_bar_length = if area.width < 60 { 10 } else if area.width < 100 { 15 } else { 20 };
 
-        for session in self.history.iter().take(max_timeline_items) {
+        for session in self.current_history.iter().take(max_timeline_items) {
             // Use stored category if available, otherwise pattern match
             let (_, color) = if let Some(stored_category) = &session.category {
                 Self::category_from_string(stored_category)
@@ -906,27 +918,6 @@ impl App {
         Ok(())
     }
 
-    async fn end_session(&mut self) -> Result<()> {
-        if let Some(mut session) = self.current_session.take() {
-            session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
-            if session.duration >= 10 {
-                self.database.insert_session(&session).await.unwrap();
-                self.history = self.database.get_recent_sessions(30).await.unwrap();
-                self.usage = self.database.get_app_usage().await.unwrap();
-                self.daily_usage = self.database.get_daily_usage().await.unwrap();
-                self.weekly_usage = self.database.get_weekly_usage().await.unwrap();
-                self.monthly_usage = self.database.get_monthly_usage().await.unwrap();
-                self.logs.push(format!("Ended session: {} for {}s", session.app_name, session.duration));
-            } else {
-                self.logs.push(format!("Skipped ending short session: {} for {}s", session.app_name, session.duration));
-            }
-        }
-        Ok(())
-    }
-
-
-
-
 
     fn start_set_app_name(&mut self) {
         self.state = AppState::Input {
@@ -964,6 +955,18 @@ impl App {
     fn is_afk(&self, threshold_secs: i64) -> bool {
         let last = *self.last_input.lock().unwrap();
         Local::now().signed_duration_since(last).num_seconds() > threshold_secs
+    }
+
+    async fn update_history(&mut self) -> Result<()> {
+        if let AppState::Dashboard { ref view_mode } = self.state {
+            self.current_history = match view_mode {
+                ViewMode::Daily => self.database.get_daily_sessions().await?,
+                ViewMode::Weekly => self.database.get_weekly_sessions().await?,
+                ViewMode::Monthly => self.database.get_monthly_sessions().await?,
+                ViewMode::History => self.database.get_recent_sessions(30).await?,
+            };
+        }
+        Ok(())
     }
 
     async fn handle_input(&mut self) -> Result<()> {

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.6 (2025-10-16)
+- Fixed UI to update timeline, session history, and categories when switching between Daily/Weekly/Monthly views
+- Added database methods for retrieving sessions by time period (daily, weekly, monthly)
+- Improved view-specific data loading for better performance and accuracy
+- Added hourly auto-save feature (saves sessions every 1 hour automatically)
+- Implemented signal handlers for graceful crash recovery (SIGTERM, SIGINT)
+- Sessions now automatically save on quit and on crash/signal interruption
+- Removed 'e' end session command - simplified workflow where users only quit when done
+- Enhanced data persistence with automatic save intervals and crash protection
+
 ## v0.1.5 (2025-10-15)
 - Added AFK (Away From Keyboard) detection feature with real-time status display
 - Implemented global keyboard and mouse activity monitoring using rdev library

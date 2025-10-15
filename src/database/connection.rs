@@ -117,4 +117,31 @@ impl Database {
         .await?;
         Ok(rows.into_iter().map(|r| (r.app_name, r.total_duration.unwrap_or(0))).collect())
     }
+
+    pub async fn get_daily_sessions(&self) -> Result<Vec<Session>> {
+        let rows = sqlx::query_as::<_, Session>(
+            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE DATE(start_time) = CURRENT_DATE ORDER BY start_time DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn get_weekly_sessions(&self) -> Result<Vec<Session>> {
+        let rows = sqlx::query_as::<_, Session>(
+            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '7 days' ORDER BY start_time DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    pub async fn get_monthly_sessions(&self) -> Result<Vec<Session>> {
+        let rows = sqlx::query_as::<_, Session>(
+            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '30 days' ORDER BY start_time DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
 }
