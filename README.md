@@ -1,6 +1,6 @@
 # Neura Hustle Tracker
 
-A cross-platform Rust-based time-tracking tool for monitoring productivity through app usage during work sessions. Built with Ratatui for the UI, and Postgres for history. Supports Windows, MacOS, and Linux.
+A cross-platform time-tracking tool for monitoring your productivity through app usage during work sessions. Built with Rust, Ratatui for the UI and Postgres database. Supports Windows, MacOS, and Linux.
 
 ![Demo](src/screenshots/demo.png)
 
@@ -15,6 +15,40 @@ A cross-platform Rust-based time-tracking tool for monitoring productivity throu
 - **Session Management**: Manual start/end sessions with automatic saving
 - **Real-time Tracking**: Live monitoring of active applications and usage time
 - **PostgreSQL Storage**: Persistent data storage with automatic migrations
+
+### Feature Comparison
+
+##### Basics
+
+|                 | User owns data     | TUI                | Sync                       | Open Source        |
+| --------------- |:------------------:|:------------------:|:--------------------------:|:------------------:|
+| HustleTracker   | :white_check_mark: | :white_check_mark: | Centralized                | :white_check_mark: |
+| [RescueTime]    | :x:                | :x:                | Centralized                | :x:                |
+| [Selfspy]       | :white_check_mark: | :x:                | :x:                        | :white_check_mark: |
+| [ulogme]        | :white_check_mark: | :x:                | :x:                        | :white_check_mark: |
+
+[RescueTime]: https://www.rescuetime.com/
+[Selfspy]: https://github.com/selfspy/selfspy
+[ulogme]: https://github.com/karpathy/ulogme
+[WakaTime]: https://wakatime.com/
+
+##### Platforms
+
+|               | Windows            | macOS              | Linux              | Android            | iOS                 |
+| ------------- |:------------------:|:------------------:|:------------------:|:------------------:|:-------------------:|
+| HustleTracker | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                |:x:                  |
+| [RescueTime]  | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |Limited              |
+| [Selfspy]     | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                |:x:                  |
+| [ulogme]      | :x:                | :white_check_mark: | :white_check_mark: | :x:                |:x:                  |
+
+##### Tracking
+
+|               | App & Window Title | AFK                | Browser Extensions | Editor Plugins     | Extensible            |
+| ------------- |:------------------:|:------------------:|:------------------:|:------------------:|:---------------------:|
+| HustleTracker | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :white_check_mark:    |
+| [RescueTime]  | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :x:                   |
+| [Selfspy]     | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   |
+| [ulogme]      | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   |
 
 ## Prerequisites
 - Rust 1.90+
@@ -69,7 +103,6 @@ The app provides a terminal-based interface for time tracking with an interactiv
 - **Tab**: Switch between dashboard views (Daily/Weekly/Monthly/History)
 - **Shift+C**: Open commands popup menu with all available shortcuts
 - **r**: Rename apps/tabs (arrow keys to navigate, Enter to select)
-- **e**: End the current session (saves to database)
 - **m**: Manually set app name (if auto-detection fails)
 - **u**: Update current app detection
 - **l**: View application logs
