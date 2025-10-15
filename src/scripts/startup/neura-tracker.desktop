@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Exec=gnome-terminal -- bash -c 'sleep 30 && cd /srv/rs/neura-hustle-tracker && make run'
+Name=Neura Hustle Tracker
+Comment=Start Neura Hustle Tracker on login
+X-GNOME-Autostart-enabled=true
