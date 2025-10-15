@@ -17,3 +17,5 @@ services:
 
 volumes:
   postgres_data:
+    external: true
+    name: timetracking_postgres_data

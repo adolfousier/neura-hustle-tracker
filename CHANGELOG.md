@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.1 (2025-10-15)
+
+- **Fixed .env Loading**: Corrected credential loading to use project root directory, preventing generation from startup scripts or different working directories
+- **Data Recovery**: Restored lost database data by switching to correct Docker volume (timetracking_postgres_data)
+- **Cross-Platform Startup**: Ensured startup scripts work consistently across Windows, macOS, and Linux by loading .env from cwd
+- **No Overwrite Policy**: Implemented protection against overwriting existing .env files; only generates if missing
+- **README Updates**: Added CONTRIBUTING.md, updated contributing section, added license section
+- **Build Fixes**: Resolved path issues for reliable .env detection and database connections
+
 ## v0.2.0 (2025-10-15)
 
 - **Wayland AFK Detection**: Implemented D-Bus based idle time monitoring for Wayland systems
