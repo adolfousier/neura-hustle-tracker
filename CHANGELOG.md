@@ -1,6 +1,15 @@
 # Changelog
 
+## v0.2.0 (2025-10-15)
+
+- **Wayland AFK Detection**: Implemented D-Bus based idle time monitoring for Wayland systems
+- Added dual-mode AFK detection: GNOME Session Manager D-Bus interface for Wayland, rdev library for X11
+- Enhanced Wayland compatibility with automatic session type detection and appropriate input monitoring
+- Improved error handling for D-Bus connection failures with graceful fallback mechanisms
+- Added `uses_wayland()` method to AppMonitor for session type detection
+
 ## v0.1.9 (2025-10-15)
+
 - **Real-Time Activity Progress Bars**: Replaced timeline chart with dynamic progress bars showing percentage of day for each app
 - Implemented clean app name display by removing "gnome-" prefixes for better readability
 - Added automatic database migration to fix historical categorization data corrupted from previous versions
@@ -9,6 +18,7 @@
 - Improved progress bar layout with percentage display and clean visual design
 
 ## v0.1.8 (2025-10-15)
+
 - **Native Wayland Support**: Full support for GNOME Wayland sessions via D-Bus integration
 - Added automatic Wayland/X11 detection - app intelligently switches between backends
 - Integrated with [Window Calls GNOME Extension](https://extensions.gnome.org/extension/4724/window-calls/) for native Wayland window tracking
@@ -26,6 +36,7 @@
 - Improved logging with platform-specific detection messages (Wayland vs X11)
 
 ## v0.1.7 (2025-10-15)
+
 - **Zero-Configuration Onboarding**: Database credentials now auto-generate on first run
 - Implemented automatic credential generation system with secure random passwords
 - Added auto-detection for missing .env file - creates one automatically with secure credentials
@@ -40,7 +51,7 @@
 - Featured "One Command Setup" approach for new users (`make run` or manual one-liner)
 - Added platform-specific setup sections for Windows, macOS, and Linux
 - Clear warnings about needing to `cd` into project directory before running commands
-- Included actual repository URL (https://github.com/adolfousier/neura-hustle-tracker) in all examples
+- Included actual repository URL (<https://github.com/adolfousier/neura-hustle-tracker>) in all examples
 - Emphasized use of `cargo build --release` for optimized production builds
 - Moved advanced configuration options to separate clearly-marked sections
 - Added `rand` dependency for cryptographically secure credential generation
@@ -49,6 +60,7 @@
 - Auto-generated .env file includes helpful comments explaining the credentials
 
 ## v0.1.6 (2025-10-15)
+
 - Fixed UI to update timeline, session history, and categories when switching between Daily/Weekly/Monthly views
 - Added database methods for retrieving sessions by time period (daily, weekly, monthly)
 - Improved view-specific data loading for better performance and accuracy
@@ -59,6 +71,7 @@
 - Enhanced data persistence with automatic save intervals and crash protection
 
 ## v0.1.5 (2025-10-14)
+
 - Added AFK (Away From Keyboard) detection feature with real-time status display
 - Implemented global keyboard and mouse activity monitoring using rdev library
 - Added "AFK Status" card to the UI showing current status, idle time, and activity detection
@@ -83,6 +96,7 @@
 - Added support for storing and retrieving app categories in session data
 
 ## v0.1.4 (2025-10-14)
+
 - Complete dashboard redesign with comprehensive data visualization
 - Added pie chart showing app usage categories (Development, Browsing, Communication, Media, Files, Other)
 - Added color-coded timeline showing recent activity patterns
@@ -96,6 +110,7 @@
 - Better integration of all dashboard components for comprehensive view
 
 ## v0.1.3 (2025-10-14)
+
 - Added interactive dashboard with multiple views: Daily, Weekly, Monthly, and History
 - Implemented Tab key navigation to switch between dashboard views
 - Added visual bar charts for usage statistics with color-coded displays
@@ -107,6 +122,7 @@
 - Updated commands display to show [Tab] for view switching
 
 ## v0.1.2 (2025-10-13)
+
 - Added logging functionality: press 'l' to view application logs
 - Changed auto-save interval from 1 hour to 10 minutes for more frequent data persistence
 - Improved error handling throughout the application
@@ -116,6 +132,7 @@
 - Enhanced UI with better display of session information and usage statistics
 
 ## v0.1.0 (Initial Release) (2025-10-13)
+
 - Initial implementation: TUI for sessions, Postgres storage, app monitoring.
 - Dependencies added via cargo add.
 - Modular structure with services.
