@@ -141,8 +141,8 @@ impl App {
             }
 
             // Check for app or window change
-            if let Ok(active_app) = self.monitor.get_active_app() {
-                let active_window = self.monitor.get_active_window_name().ok();
+            if let Ok(active_app) = self.monitor.get_active_app_async().await {
+                let active_window = self.monitor.get_active_window_name_async().await.ok();
                 if active_app != self.current_app || active_window != self.current_window {
                     self.switch_app(active_app.clone()).await?;
                     self.current_app = active_app;
@@ -861,8 +861,10 @@ impl App {
     }
 
     async fn start_tracking(&mut self) -> Result<()> {
-        let app_name = self.manual_app_name.clone().unwrap_or_else(|| {
-            match self.monitor.get_active_app() {
+        let app_name = if let Some(manual_name) = self.manual_app_name.clone() {
+            manual_name
+        } else {
+            match self.monitor.get_active_app_async().await {
                 Ok(detected) => {
                     self.current_app = detected.clone();
                     detected
@@ -875,8 +877,8 @@ impl App {
                     "Unknown".to_string()
                 }
             }
-        });
-        let window_name = self.monitor.get_active_window_name().ok();
+        };
+        let window_name = self.monitor.get_active_window_name_async().await.ok();
         let start_time = Local::now();
         // Determine category from original app name
         let (category_name, _) = Self::categorize_app(&app_name);
@@ -909,7 +911,7 @@ impl App {
             }
         }
         // Start new session
-        let window_name = self.monitor.get_active_window_name().ok();
+        let window_name = self.monitor.get_active_window_name_async().await.ok();
         let start_time = Local::now();
         // Determine category from original app name
         let (category_name, _) = Self::categorize_app(&new_app);

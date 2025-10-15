@@ -130,11 +130,27 @@ docker-compose up -d && cargo build --release && .\target\release\neura_hustle_t
 - **Note**: Grant Screen Recording permission to Terminal in System Preferences > Security & Privacy > Privacy > Screen Recording
 
 #### Linux
+
+**General Setup:**
 - Install Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Install Docker and Docker Compose from your package manager
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
+
+**X11 (Default):**
 - Run: `make run` OR `docker-compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
-- **Note**: Requires GUI desktop environment (GNOME, KDE, etc.) for app detection. Works with X11 and Wayland.
+- Works out of the box on X11 sessions
+
+**Wayland (GNOME):**
+- **Required**: Install the [Window Calls GNOME Extension](https://extensions.gnome.org/extension/4724/window-calls/)
+  - Visit the link in your browser and toggle ON to install
+  - Or use Extension Manager: `sudo apt install gnome-shell-extension-manager`
+- Run: `make run` (automatic Wayland detection) OR `docker-compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
+- The app will automatically detect Wayland and use D-Bus for window tracking
+
+**Note**:
+- Requires GUI desktop environment (GNOME, KDE, etc.) for app detection
+- On Wayland, the Window Calls extension is **required** for tracking active windows
+- X11 sessions work without additional setup
 
 ---
 
@@ -185,7 +201,9 @@ The application is organized into modular services:
 - `utils/`: Helper utilities
 
 ## Supported Platforms
-- **Linux**: X11 and Wayland support
+- **Linux**:
+  - X11: Native support via active-win-pos-rs
+  - Wayland: Supported via D-Bus with [Window Calls extension](https://extensions.gnome.org/extension/4724/window-calls/) (GNOME only)
 - **macOS**: Full support with Accessibility API
 - **Windows**: Full support with Windows API
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.8 (2025-10-15)
+- **Native Wayland Support**: Full support for GNOME Wayland sessions via D-Bus integration
+- Added automatic Wayland/X11 detection - app intelligently switches between backends
+- Integrated with [Window Calls GNOME Extension](https://extensions.gnome.org/extension/4724/window-calls/) for native Wayland window tracking
+- Implemented dual-mode window detection: D-Bus for Wayland, active-win-pos-rs for X11/Windows/macOS
+- Added `zbus` and `serde_json` dependencies for D-Bus communication
+- Enhanced error messages to guide users through Wayland setup requirements
+- **Automated Wayland Setup Check**: Makefile now detects Wayland sessions and verifies extension installation
+- Added `check-wayland` target that validates Window Calls extension on Wayland systems
+- Improved user experience with helpful setup instructions when extension is missing
+- Updated README with comprehensive Wayland setup instructions
+- Separated Linux setup into X11 and Wayland sections with specific requirements
+- Cross-platform compatibility maintained: X11, Wayland (GNOME), Windows, macOS
+- Enhanced app name normalization for Wayland's different wm_class format (e.g., org.gnome.Nautilus, firefox_firefox)
+- Added support for Alacritty and Nautilus in app name detection
+- Improved logging with platform-specific detection messages (Wayland vs X11)
+
 ## v0.1.7 (2025-10-15)
 - **Zero-Configuration Onboarding**: Database credentials now auto-generate on first run
 - Implemented automatic credential generation system with secure random passwords

@@ -2,53 +2,193 @@ use active_win_pos_rs::get_active_window;
 use anyhow::Result;
 use std::env;
 
-pub struct AppMonitor;
+#[derive(serde::Deserialize, Debug)]
+struct WindowInfo {
+    #[serde(default)]
+    wm_class: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    focus: bool,
+}
+
+pub struct AppMonitor {
+    use_wayland: bool,
+}
+
+impl Default for AppMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl AppMonitor {
     pub fn new() -> Self {
-        Self
+        let use_wayland = Self::is_wayland();
+        if use_wayland {
+            log::info!("Detected Wayland session - using D-Bus for window tracking");
+        } else {
+            log::info!("Using active-win-pos-rs for window tracking");
+        }
+        Self { use_wayland }
+    }
+
+    fn is_wayland() -> bool {
+        env::var("WAYLAND_DISPLAY").is_ok() ||
+        env::var("XDG_SESSION_TYPE").map(|s| s == "wayland").unwrap_or(false)
+    }
+
+    async fn get_active_window_wayland() -> Result<(String, String)> {
+        let connection = zbus::Connection::session().await?;
+
+        let response = connection.call_method(
+            Some("org.gnome.Shell"),
+            "/org/gnome/Shell/Extensions/Windows",
+            Some("org.gnome.Shell.Extensions.Windows"),
+            "List",
+            &(),
+        ).await?;
+
+        // The response is a string directly, not a variant
+        let json_str: String = response.body().deserialize()?;
+
+        let windows: Vec<WindowInfo> = serde_json::from_str(&json_str)?;
+
+        let focused_window = windows.iter()
+            .find(|w| w.focus)
+            .ok_or(anyhow::anyhow!("No focused window found"))?;
+
+        Ok((focused_window.wm_class.clone(), focused_window.title.clone()))
+    }
+
+    pub async fn get_active_app_async(&self) -> Result<String> {
+        if self.use_wayland {
+            // Use Wayland D-Bus method
+            match Self::get_active_window_wayland().await {
+                Ok((wm_class, _title)) => {
+                    log::info!("Detected active app (Wayland): {}", wm_class);
+                    Ok(self.fix_app_name(wm_class))
+                }
+                Err(e) => {
+                    let error_msg = format!(
+                        "Wayland window detection failed: {}. \
+                        Make sure the 'Window Calls' GNOME extension is installed and enabled. \
+                        Install from: https://extensions.gnome.org/extension/4724/window-calls/",
+                        e
+                    );
+                    log::warn!("{}", error_msg);
+                    Err(anyhow::anyhow!(error_msg))
+                }
+            }
+        } else {
+            // Use X11 method
+            match get_active_window() {
+                Ok(active_window) => {
+                    log::info!("Detected active app (X11): {}", active_window.app_name);
+                    Ok(self.fix_app_name(active_window.app_name))
+                }
+                Err(_) => {
+                    let error_msg = self.detect_environment_issue();
+                    log::warn!("{}", error_msg);
+                    Err(anyhow::anyhow!(error_msg))
+                }
+            }
+        }
     }
 
     pub fn get_active_app(&self) -> Result<String> {
-        match get_active_window() {
-            Ok(active_window) => {
-                log::info!("Detected active app: {}", active_window.app_name);
-                Ok(self.fix_app_name(active_window.app_name))
+        // Synchronous wrapper - spawn a new runtime for blocking contexts
+        if self.use_wayland {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(self.get_active_app_async())
+            })
+        } else {
+            match get_active_window() {
+                Ok(active_window) => {
+                    log::info!("Detected active app (X11): {}", active_window.app_name);
+                    Ok(self.fix_app_name(active_window.app_name))
+                }
+                Err(_) => {
+                    let error_msg = self.detect_environment_issue();
+                    log::warn!("{}", error_msg);
+                    Err(anyhow::anyhow!(error_msg))
+                }
             }
-            Err(_) => {
-                let error_msg = self.detect_environment_issue();
-                log::warn!("{}", error_msg);
-                Err(anyhow::anyhow!(error_msg))
+        }
+    }
+
+    pub async fn get_active_window_name_async(&self) -> Result<String> {
+        if self.use_wayland {
+            // Use Wayland D-Bus method
+            match Self::get_active_window_wayland().await {
+                Ok((_wm_class, title)) => Ok(title),
+                Err(_) => {
+                    log::warn!("Failed to get active window title (Wayland).");
+                    Ok("Unknown Window".to_string())
+                }
+            }
+        } else {
+            // Use X11 method
+            match get_active_window() {
+                Ok(active_window) => Ok(active_window.title),
+                Err(_) => {
+                    log::warn!("Failed to get active window title.");
+                    Ok("Unknown Window".to_string())
+                }
             }
         }
     }
 
     pub fn get_active_window_name(&self) -> Result<String> {
-        match get_active_window() {
-            Ok(active_window) => {
-                Ok(active_window.title)
-            }
-            Err(_) => {
-                log::warn!("Failed to get active window title.");
-                Ok("Unknown Window".to_string())
+        // Synchronous wrapper
+        if self.use_wayland {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(self.get_active_window_name_async())
+            })
+        } else {
+            match get_active_window() {
+                Ok(active_window) => Ok(active_window.title),
+                Err(_) => {
+                    log::warn!("Failed to get active window title.");
+                    Ok("Unknown Window".to_string())
+                }
             }
         }
     }
 
     fn fix_app_name(&self, app: String) -> String {
         let app_lower = app.to_lowercase();
-        if app_lower.contains("gnome-terminal") {
-            "gnome-terminal".to_string()
-        } else if app_lower == "soffice.bin" {
-            "libreoffice".to_string()
-        } else if app_lower.contains("chrome") || app_lower.contains("chromium") {
-            "chrome".to_string()
-        } else if app_lower.contains("firefox") {
-            "firefox".to_string()
-        } else if app_lower.contains("code") || app_lower.contains("vscode") {
-            "vscode".to_string()
+
+        // Handle Wayland wm_class format (e.g., "org.gnome.Nautilus", "firefox_firefox")
+        let normalized = if app_lower.contains('.') {
+            app_lower.split('.').last().unwrap_or(&app_lower).to_string()
+        } else if app_lower.contains('_') {
+            app_lower.split('_').next().unwrap_or(&app_lower).to_string()
         } else {
-            app
+            app_lower.clone()
+        };
+
+        if normalized.contains("gnome-terminal") || normalized.contains("terminal") {
+            "gnome-terminal".to_string()
+        } else if normalized == "soffice" || app_lower == "soffice.bin" {
+            "libreoffice".to_string()
+        } else if normalized.contains("chrome") || normalized.contains("chromium") {
+            "chrome".to_string()
+        } else if normalized.contains("firefox") {
+            "firefox".to_string()
+        } else if normalized.contains("code") || normalized.contains("vscode") {
+            "vscode".to_string()
+        } else if normalized.contains("nautilus") {
+            "nautilus".to_string()
+        } else if normalized.contains("alacritty") {
+            "alacritty".to_string()
+        } else {
+            // Return the normalized name if it's cleaner, otherwise original
+            if normalized.len() < app.len() && !normalized.is_empty() {
+                normalized
+            } else {
+                app
+            }
         }
     }
 
