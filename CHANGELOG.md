@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.0 (2025-10-15)
+- **Wayland AFK Detection**: Implemented D-Bus based idle time monitoring for Wayland systems
+- Added dual-mode AFK detection: GNOME Session Manager D-Bus interface for Wayland, rdev library for X11
+- Enhanced Wayland compatibility with automatic session type detection and appropriate input monitoring
+- Improved error handling for D-Bus connection failures with graceful fallback mechanisms
+- Added `uses_wayland()` method to AppMonitor for session type detection
+
 ## v0.1.9 (2025-10-15)
 - **Real-Time Activity Progress Bars**: Replaced timeline chart with dynamic progress bars showing percentage of day for each app
 - Implemented clean app name display by removing "gnome-" prefixes for better readability

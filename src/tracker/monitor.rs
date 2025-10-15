@@ -33,6 +33,10 @@ impl AppMonitor {
         Self { use_wayland }
     }
 
+    pub fn uses_wayland(&self) -> bool {
+        self.use_wayland
+    }
+
     fn is_wayland() -> bool {
         env::var("WAYLAND_DISPLAY").is_ok() ||
         env::var("XDG_SESSION_TYPE").map(|s| s == "wayland").unwrap_or(false)

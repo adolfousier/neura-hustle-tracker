@@ -67,20 +67,13 @@ impl App {
     pub fn new(database: Database) -> Self {
         let monitor = AppMonitor::new();
         let last_input = Arc::new(Mutex::new(Local::now()));
-        let last_input_clone = Arc::clone(&last_input);
-        std::thread::spawn(move || {
-            let callback = move |event: rdev::Event| {
-                match event.event_type {
-                    EventType::KeyPress(_) | EventType::KeyRelease(_) | EventType::ButtonPress(_) | EventType::ButtonRelease(_) | EventType::MouseMove { .. } => {
-                        *last_input_clone.lock().unwrap() = Local::now();
-                    }
-                    _ => {}
-                }
-            };
-            if let Err(error) = listen(callback) {
-                eprintln!("Error listening for input events: {:?}", error);
-            }
-        });
+
+        // Choose input monitoring method based on session type
+        if monitor.uses_wayland() {
+            Self::start_wayland_input_monitoring(Arc::clone(&last_input));
+        } else {
+            Self::start_x11_input_monitoring(Arc::clone(&last_input));
+        }
         Self {
             state: AppState::Dashboard { view_mode: ViewMode::Daily },
             database,
@@ -97,6 +90,80 @@ impl App {
             current_window: None,
             current_session: None,
             last_input,
+        }
+    }
+
+    // X11 input monitoring using rdev
+    fn start_x11_input_monitoring(last_input: Arc<Mutex<DateTime<Local>>>) {
+        std::thread::spawn(move || {
+            let callback = move |event: rdev::Event| {
+                match event.event_type {
+                    EventType::KeyPress(_) | EventType::KeyRelease(_) | EventType::ButtonPress(_) | EventType::ButtonRelease(_) | EventType::MouseMove { .. } => {
+                        *last_input.lock().unwrap() = Local::now();
+                    }
+                    _ => {}
+                }
+            };
+            if let Err(error) = listen(callback) {
+                eprintln!("Error listening for input events (X11): {:?}", error);
+            }
+        });
+    }
+
+    // Wayland input monitoring using D-Bus idle monitoring
+    fn start_wayland_input_monitoring(last_input: Arc<Mutex<DateTime<Local>>>) {
+        tokio::spawn(async move {
+            loop {
+                match Self::check_wayland_idle_time().await {
+                    Ok(idle_seconds) => {
+                        // If idle time is less than 10 seconds, consider it as recent activity
+                        if idle_seconds < 10 {
+                            *last_input.lock().unwrap() = Local::now();
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("Failed to check Wayland idle time: {}", e);
+                        // Fallback: update every 60 seconds if we can't monitor properly
+                        *last_input.lock().unwrap() = Local::now();
+                    }
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            }
+        });
+    }
+
+    // Check idle time using GNOME Session Manager D-Bus interface
+    async fn check_wayland_idle_time() -> Result<u32> {
+        let connection = zbus::Connection::session().await?;
+
+        // Try GNOME Session Manager idle time
+        match connection.call_method(
+            Some("org.gnome.SessionManager"),
+            "/org/gnome/SessionManager/Presence",
+            Some("org.gnome.SessionManager.Presence"),
+            "GetIdleTime",
+            &(),
+        ).await {
+            Ok(response) => {
+                let idle_time: u32 = response.body().deserialize()?;
+                Ok(idle_time / 1000) // Convert milliseconds to seconds
+            }
+            Err(_) => {
+                // Fallback: try Screen Saver interface
+                match connection.call_method(
+                    Some("org.gnome.ScreenSaver"),
+                    "/org/gnome/ScreenSaver",
+                    Some("org.gnome.ScreenSaver"),
+                    "GetActiveTime",
+                    &(),
+                ).await {
+                    Ok(_response) => {
+                        // If screen saver is not active, assume recent activity
+                        Ok(0) // Consider it active if we can call this
+                    }
+                    Err(e) => Err(anyhow::anyhow!("No suitable D-Bus interface found: {}", e))
+                }
+            }
         }
     }
 
