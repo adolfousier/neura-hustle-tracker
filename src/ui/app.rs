@@ -113,6 +113,11 @@ impl App {
         // Start tracking initial app before enabling raw mode
         self.start_tracking().await?;
 
+        // Fix any old category data from previous versions
+        if let Err(e) = self.database.fix_old_categories().await {
+            log::warn!("Failed to fix old categories: {}", e);
+        }
+
         // Load history and usage (load 30 sessions for display)
         self.history = self.database.get_recent_sessions(30).await.unwrap();
         self.usage = self.database.get_app_usage().await.unwrap();
@@ -660,9 +665,14 @@ impl App {
 
     fn draw_stats(&self, f: &mut Frame, area: ratatui::layout::Rect, data: &[(String, i64)]) {
         // Adaptive number of items based on available height
-        let max_items = (area.height.saturating_sub(2) as usize).min(15).max(3);
+        let max_items = (area.height.saturating_sub(3) as usize).min(15).max(3);
 
-        let stats_items: Vec<ListItem> = data
+        let mut stats_items: Vec<ListItem> = Vec::new();
+
+        // Add top margin
+        stats_items.push(ListItem::new(Line::from("")));
+
+        stats_items.extend(data
             .iter()
             .take(max_items)
             .map(|(app, duration)| {
@@ -687,7 +697,7 @@ impl App {
                 };
                 ListItem::new(Line::from(display))
             })
-            .collect();
+            .collect::<Vec<ListItem>>());
 
         let total_duration: i64 = data.iter().map(|(_, d)| d).sum();
         let total_hours = total_duration / 3600;
@@ -705,9 +715,12 @@ impl App {
 
     fn draw_history(&self, f: &mut Frame, area: ratatui::layout::Rect) {
         // Adaptive number of items based on available height
-        let max_items = (area.height.saturating_sub(2) as usize).min(30).max(5);
+        let max_items = (area.height.saturating_sub(3) as usize).min(30).max(5);
 
         let mut history_items: Vec<ListItem> = Vec::new();
+
+        // Add top margin
+        history_items.push(ListItem::new(Line::from("")));
 
         // Add current session first with real-time duration
         if let Some(current_session) = &self.current_session {
@@ -808,28 +821,30 @@ impl App {
         if app_lower.contains("code") || app_lower.contains("vim") || app_lower.contains("nvim") ||
            app_lower.contains("terminal") || app_lower.contains("alacritty") || app_lower.contains("kitty") ||
            app_lower.contains("rust") || app_lower.contains("cargo") || app_lower.contains("editor") ||
-           app_lower.contains("vscode") || app_lower.contains("vscodium") {
-            ("💻 Development", Color::Cyan)
+           app_lower.contains("vscode") || app_lower.contains("vscodium") || app_lower.contains("gedit") ||
+           app_lower.contains("nano") || app_lower.contains("emacs") || app_lower.contains("atom") ||
+           app_lower.contains("sublime") {
+            ("💻 Development", Color::Yellow)
         } else if app_lower.contains("browser") || app_lower.contains("chrome") || app_lower.contains("firefox") ||
                   app_lower.contains("brave") || app_lower.contains("edge") || app_lower.contains("chromium") {
-            ("🌐 Browsing", Color::LightBlue)
+            ("🌐 Browsing", Color::Blue)
         } else if app_lower.contains("slack") || app_lower.contains("zoom") || app_lower.contains("teams") ||
                   app_lower.contains("discord") || app_lower.contains("telegram") || app_lower.contains("chat") ||
                   app_lower.contains("signal") || app_lower.contains("element") || app_lower.contains("video-call") ||
                   app_lower.contains("skype") || app_lower.contains("jitsi") {
-            ("💬 Communication", Color::LightGreen)
+            ("💬 Communication", Color::Green)
         } else if app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("music") ||
                   app_lower.contains("media") || app_lower.contains("rhythmbox") || app_lower.contains("audacious") ||
                   app_lower.contains("clementine") {
-            ("🎵 Media", Color::LightMagenta)
+            ("🎵 Media", Color::Magenta)
         } else if app_lower.contains("nautilus") || app_lower.contains("files") || app_lower.contains("dolphin") ||
                   app_lower.contains("file-manager") || app_lower.contains("thunar") || app_lower.contains("nemo") {
-            ("📁 Files", Color::LightYellow)
+            ("📁 Files", Color::Cyan)
         } else if app_lower.contains("thunderbird") || app_lower.contains("evolution") || app_lower.contains("geary") ||
                   app_lower.contains("email") {
-            ("📧 Email", Color::Yellow)
+            ("📧 Email", Color::LightYellow)
         } else if app_lower.contains("libreoffice") || app_lower.contains("soffice") {
-            ("📄 Office", Color::Blue)
+            ("📄 Office", Color::LightBlue)
         } else {
             ("📦 Other", Color::White)
         }
@@ -853,13 +868,13 @@ impl App {
     // Convert stored category string back to emoji+name and color
     fn category_from_string(category: &str) -> (&'static str, Color) {
         match category {
-            "💻 Development" => ("💻 Development", Color::Cyan),
-            "🌐 Browsing" => ("🌐 Browsing", Color::LightBlue),
-            "💬 Communication" => ("💬 Communication", Color::LightGreen),
-            "🎵 Media" => ("🎵 Media", Color::LightMagenta),
-            "📁 Files" => ("📁 Files", Color::LightYellow),
-            "📧 Email" => ("📧 Email", Color::Yellow),
-            "📄 Office" => ("📄 Office", Color::Blue),
+            "💻 Development" => ("💻 Development", Color::Yellow),
+            "🌐 Browsing" => ("🌐 Browsing", Color::Blue),
+            "💬 Communication" => ("💬 Communication", Color::Green),
+            "🎵 Media" => ("🎵 Media", Color::Magenta),
+            "📁 Files" => ("📁 Files", Color::Cyan),
+            "📧 Email" => ("📧 Email", Color::LightYellow),
+            "📄 Office" => ("📄 Office", Color::LightBlue),
             _ => ("📦 Other", Color::White),
         }
     }
@@ -910,49 +925,83 @@ impl App {
     }
 
     fn draw_timeline(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        // Show recent activity timeline with color-coded apps
-        let mut timeline_lines = vec![];
-        timeline_lines.push(Line::from(""));
+        // Real-time progress bars showing % of day for each app
+        let mut progress_lines = vec![];
 
-        // Adaptive: show more items if we have height, fewer if narrow
-        let max_timeline_items = (area.height.saturating_sub(3) as usize).min(12).max(4);
-        let max_bar_length = if area.width < 60 { 10 } else if area.width < 100 { 15 } else { 20 };
-
-        for session in self.current_history.iter().take(max_timeline_items) {
-            // Use stored category if available, otherwise pattern match
-            let (_, color) = if let Some(stored_category) = &session.category {
-                Self::category_from_string(stored_category)
-            } else {
-                Self::categorize_app(&session.app_name)
-            };
-            let time = session.start_time.format("%H:%M");
-            let duration_min = session.duration / 60;
-
-            // Adaptive bar length based on available width
-            let bar_length = ((duration_min / 2).max(1) as usize).min(max_bar_length);
-            let bar = "▓".repeat(bar_length);
-
-            // Truncate app name if terminal is narrow
-            let app_display = if area.width < 60 {
-                if session.app_name.len() > 12 {
-                    format!("{}...", &session.app_name[..9])
-                } else {
-                    session.app_name.clone()
-                }
-            } else {
-                session.app_name.clone()
-            };
-
-            timeline_lines.push(Line::from(vec![
-                ratatui::text::Span::raw(format!("{} ", time)),
-                ratatui::text::Span::styled(bar, Style::default().fg(color)),
-                ratatui::text::Span::raw(format!(" {} ({}m)", app_display, duration_min)),
-            ]));
+        if self.daily_usage.is_empty() {
+            progress_lines.push(Line::from("No activity data yet today"));
+            let progress = Paragraph::new(progress_lines)
+                .block(Block::default().borders(Borders::ALL).title("📊 Today's Activity Progress"));
+            f.render_widget(progress, area);
+            return;
         }
 
-        let timeline = Paragraph::new(timeline_lines)
-            .block(Block::default().borders(Borders::ALL).title("⏱️  Timeline"));
-        f.render_widget(timeline, area);
+        // Calculate total seconds in the day so far
+        let now = Local::now();
+        let start_of_day = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Local).unwrap();
+        let seconds_since_midnight = now.signed_duration_since(start_of_day).num_seconds() as f64;
+
+        // Sort apps by usage time (descending)
+        let mut sorted_apps: Vec<_> = self.daily_usage.iter().collect();
+        sorted_apps.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Limit to top apps that fit in the area
+        let max_items = (area.height.saturating_sub(4) as usize).min(10).max(3);
+        let top_apps = &sorted_apps[..sorted_apps.len().min(max_items)];
+
+        // Add top margin (consistent with other cards)
+        progress_lines.push(Line::from(""));
+        progress_lines.push(Line::from(""));
+
+        for (app_name, total_seconds) in top_apps {
+            let clean_app_name = Self::clean_app_name(app_name);
+            let (_, color) = self.get_app_category(app_name);
+
+            // Calculate percentage of day
+            let percentage = if seconds_since_midnight > 0.0 {
+                ((*total_seconds as f64 / seconds_since_midnight) * 100.0).min(100.0)
+            } else {
+                0.0
+            };
+
+            // Create progress bar (only filled portion visible)
+            let bar_width = (area.width.saturating_sub(20) as usize).max(10); // Reserve space for labels
+            let filled_width = ((percentage / 100.0) * bar_width as f64) as usize;
+
+            let mut bar_chars = String::new();
+            for i in 0..bar_width {
+                if i < filled_width {
+                    bar_chars.push('█');
+                } else {
+                    bar_chars.push(' ');
+                }
+            }
+
+            // Create the progress line
+            let progress_line = vec![
+                ratatui::text::Span::styled(format!("{:<12}", clean_app_name), Style::default().fg(color)),
+                ratatui::text::Span::styled(format!("{:>5.1}%", percentage), Style::default().fg(Color::Cyan)),
+                ratatui::text::Span::raw(" "),
+                ratatui::text::Span::styled(bar_chars, Style::default().fg(color)),
+            ];
+
+            progress_lines.push(Line::from(progress_line));
+        }
+
+
+
+        let progress = Paragraph::new(progress_lines)
+            .block(Block::default().borders(Borders::ALL).title("📊 Today's Activity Progress"));
+        f.render_widget(progress, area);
+    }
+
+    // Helper function to clean app names by removing gnome- prefixes
+    fn clean_app_name(app_name: &str) -> String {
+        if app_name.starts_with("gnome-") {
+            app_name.strip_prefix("gnome-").unwrap_or(app_name).to_string()
+        } else {
+            app_name.to_string()
+        }
     }
 
     fn draw_afk(&self, f: &mut Frame, area: ratatui::layout::Rect) {
@@ -1155,14 +1204,18 @@ impl App {
         match action {
             InputAction::RenameApp { old_name } => {
                 if !buffer.is_empty() {
-                    // Rename app in database
-                    if let Err(e) = self.database.rename_app(&old_name, &buffer).await {
+                    // Get the original category before renaming
+                    let original_category = self.get_app_category(&old_name).0.to_string();
+
+                    // Rename app in database while preserving category
+                    if let Err(e) = self.database.rename_app_with_category(&old_name, &buffer, &original_category).await {
                         self.logs.push(format!("[{}] Failed to rename app: {}", Local::now().format("%H:%M:%S"), e));
                     } else {
                         // Update current session if it matches
                         if let Some(session) = &mut self.current_session {
                             if session.app_name == old_name {
                                 session.app_name = buffer.clone();
+                                session.category = Some(original_category.clone());
                             }
                         }
                         // Refresh ALL usage data (all time, daily, weekly, monthly, history)
@@ -1181,7 +1234,7 @@ impl App {
                                 ViewMode::History => self.history.clone(),
                             };
                         }
-                        self.logs.push(format!("[{}] Renamed '{}' to '{}'", Local::now().format("%H:%M:%S"), old_name, buffer));
+                        self.logs.push(format!("[{}] Renamed '{}' to '{}' (preserved category: {})", Local::now().format("%H:%M:%S"), old_name, buffer, original_category));
                     }
                 }
                 self.state = AppState::Dashboard { view_mode: ViewMode::Daily };

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.9 (2025-10-15)
+- **Real-Time Activity Progress Bars**: Replaced timeline chart with dynamic progress bars showing percentage of day for each app
+- Implemented clean app name display by removing "gnome-" prefixes for better readability
+- Added automatic database migration to fix historical categorization data corrupted from previous versions
+- Fixed category preservation when renaming apps - renamed apps maintain their original categories instead of defaulting to "Other"
+- Enhanced visual design with proper top margins in all dashboard cards for consistent spacing
+- Improved progress bar layout with percentage display and clean visual design
+
 ## v0.1.8 (2025-10-15)
 - **Native Wayland Support**: Full support for GNOME Wayland sessions via D-Bus integration
 - Added automatic Wayland/X11 detection - app intelligently switches between backends

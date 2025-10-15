@@ -82,10 +82,22 @@ impl Database {
         Ok(rows)
     }
 
-    pub async fn rename_app(&self, old_name: &str, new_name: &str) -> Result<()> {
-        sqlx::query("UPDATE sessions SET app_name = $1 WHERE app_name = $2")
+    pub async fn rename_app_with_category(&self, old_name: &str, new_name: &str, category: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET app_name = $1, category = $2 WHERE app_name = $3")
             .bind(new_name)
+            .bind(category)
             .bind(old_name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn fix_old_categories(&self) -> Result<()> {
+        // Fix any sessions with old category names that should be Development
+        sqlx::query("UPDATE sessions SET category = $1 WHERE category IN ($2, $3)")
+            .bind("💻 Development")
+            .bind("🖥️  Terminal")
+            .bind("📝 Editor")
             .execute(&self.pool)
             .await?;
         Ok(())
