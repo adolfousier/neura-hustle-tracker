@@ -2,7 +2,6 @@ use anyhow::Result;
 use rand::Rng;
 use std::env;
 use std::fs;
-use std::path::Path;
 
 #[derive(Debug)]
 pub struct Settings {
@@ -10,9 +9,14 @@ pub struct Settings {
 }
 
 impl Settings {
+    fn get_env_path() -> std::path::PathBuf {
+        std::env::current_dir().unwrap().join(".env")
+    }
+
     pub fn new() -> Result<Self> {
-        // Try to load existing .env
-        dotenvy::dotenv().ok();
+        // Try to load existing .env from project root
+        let env_path = Self::get_env_path();
+        dotenvy::from_path(&env_path).ok();
 
         // Check if we need to generate credentials
         let needs_generation = Self::needs_credential_generation();
@@ -21,29 +25,21 @@ impl Settings {
             log::info!("Database credentials not found or incomplete. Generating new credentials...");
             Self::generate_and_save_credentials()?;
             // Reload .env after generation
-            dotenvy::dotenv()?;
+            dotenvy::from_path(&Self::get_env_path())?;
         }
 
         // Now try to get DATABASE_URL (should exist after generation if it was needed)
         let database_url = env::var("DATABASE_URL")
             .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable not set after credential generation"))?;
+        println!("DATABASE_URL: {}", database_url);
 
         Ok(Self { database_url })
     }
 
     fn needs_credential_generation() -> bool {
-        // Check if .env file exists
-        let env_path = Path::new(".env");
-        if !env_path.exists() {
-            return true;
-        }
-
-        // Check if required variables are set
-        let database_url = env::var("DATABASE_URL").unwrap_or_default();
-        let postgres_username = env::var("POSTGRES_USERNAME").unwrap_or_default();
-        let postgres_password = env::var("POSTGRES_PASSWORD").unwrap_or_default();
-
-        database_url.is_empty() || postgres_username.is_empty() || postgres_password.is_empty()
+        // Only generate if .env file does not exist
+        let env_path = Self::get_env_path();
+        !env_path.exists()
     }
 
     fn generate_and_save_credentials() -> Result<()> {
@@ -64,7 +60,8 @@ impl Settings {
             username, password, database_url
         );
 
-        fs::write(".env", env_content)?;
+        let env_path = Self::get_env_path();
+        fs::write(env_path, env_content)?;
 
         log::info!("✓ Generated new database credentials in .env file");
         log::info!("  Username: {}", username);

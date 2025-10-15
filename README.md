@@ -23,13 +23,16 @@ A cross-platform time-tracking tool for monitoring your productivity through app
 
 ##### Basics
 
-|                 | User owns data     | TUI                | Sync                       | Open Source        |
+|                 | User owns data     | GUI                | Sync                       | Open Source        |
 | --------------- |:------------------:|:------------------:|:--------------------------:|:------------------:|
 | HustleTracker   | :white_check_mark: | :white_check_mark: | Centralized                | :white_check_mark: |
-| [RescueTime]    | :x:                | :x:                | Centralized                | :x:                |
+| [ActivityWatch] | :white_check_mark: | :white_check_mark: | WIP, decentralized         | :white_check_mark: |
+| [RescueTime]    | :x:                | :white_check_mark: | Centralized                | :x:                |
 | [Selfspy]       | :white_check_mark: | :x:                | :x:                        | :white_check_mark: |
-| [ulogme]        | :white_check_mark: | :x:                | :x:                        | :white_check_mark: |
+| [ulogme]        | :white_check_mark: | :white_check_mark: | :x:                        | :white_check_mark: |
+| [WakaTime]      | :x:                | :white_check_mark: | Centralized                | Clients            |
 
+[ActivityWatch]: https://activitywatch.net/
 [RescueTime]: https://www.rescuetime.com/
 [Selfspy]: https://github.com/selfspy/selfspy
 [ulogme]: https://github.com/karpathy/ulogme
@@ -40,18 +43,22 @@ A cross-platform time-tracking tool for monitoring your productivity through app
 |               | Windows            | macOS              | Linux              | Android            | iOS                 |
 | ------------- |:------------------:|:------------------:|:------------------:|:------------------:|:-------------------:|
 | HustleTracker | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                |:x:                  |
+|[ActivityWatch]| :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |:x:                  |
 | [RescueTime]  | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |Limited              |
 | [Selfspy]     | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                |:x:                  |
 | [ulogme]      | :x:                | :white_check_mark: | :white_check_mark: | :x:                |:x:                  |
+| [WakaTime]    | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                |:x:                  |
 
 ##### Tracking
 
 |               | App & Window Title | AFK                | Browser Extensions | Editor Plugins     | Extensible            | Comprehensive App Detection |
 | ------------- |:------------------:|:------------------:|:------------------:|:------------------:|:---------------------:|:---------------------------:|
 | HustleTracker | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :white_check_mark:    | :white_check_mark:          |
+|[ActivityWatch]| :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark:    | :white_check_mark:          |
 | [RescueTime]  | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :x:                   | :white_check_mark:          |
 | [Selfspy]     | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   | :x:                         |
 | [ulogme]      | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   | :x:                         |
+| [WakaTime]    | :x:                | :white_check_mark: | :white_check_mark: | :white_check_mark: | Only for text editors | :x:                         |
 
 ## Prerequisites
 - Rust 1.90+
@@ -61,9 +68,30 @@ A cross-platform time-tracking tool for monitoring your productivity through app
   - **macOS**: Screen Recording permission may be required for window titles
   - **Windows**: No additional permissions needed
 
+## One-Click Installation (No Prerequisites Required)
+
+For users who don't have Rust, Docker, Git, or Make installed, use these one-liner commands to install everything and run the app automatically:
+
+### Linux (Ubuntu/Debian)
+```bash
+sudo apt update && sudo apt install -y make docker.io curl git && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && make run
+```
+
+### macOS
+```bash
+brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && make run
+```
+
+### Windows (PowerShell)
+```powershell
+winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; make run;
+```
+
+**Note**: These commands install all required dependencies, clone the repository, and start the application. Admin/sudo privileges may be required for installations.
+
 ## Setup
 
-**🎉 Zero Configuration Required!** Database credentials are auto-generated on first run.
+**🎉 Zero Configuration Required!** Database credentials are auto-generated on first run if `.env` is missing. Existing `.env` files are never overwritten.
 
 ### Easiest Way - Using Make (Recommended)
 
@@ -162,6 +190,32 @@ By default, credentials are auto-generated. To use custom credentials:
 4. Navigate to project: `cd neura-hustle-tracker`
 5. Run: `cargo build --release && ./target/release/neura_hustle_tracker`
 
+## Startup on Boot/Login
+
+To run Neura Hustle Tracker automatically on system startup:
+
+**Note**: The startup scripts include a 30-second delay to allow system services (like Docker) to fully initialize before launching the application.
+
+### Ubuntu/Linux (GNOME)
+```bash
+mkdir -p ~/.config/autostart/ && cp src/scripts/startup/neura-tracker.desktop ~/.config/autostart/
+```
+Then edit `~/.config/autostart/neura-tracker.desktop` and replace `/path/to/neura-hustle-tracker` with your actual project directory path (e.g., `/home/user/neura-hustle-tracker`).
+
+Log out and back in to start automatically.
+
+### macOS
+```bash
+mkdir -p ~/Library/LaunchAgents/ && cp src/scripts/startup/neura-tracker.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/neura-tracker.plist
+```
+Log out and back in to start automatically.
+
+### Windows
+```cmd
+copy src\scripts\startup\neura-tracker.bat "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\"
+```
+Or use Task Scheduler to run the batch file at logon.
+
 ## Usage
 The app provides a terminal-based interface for time tracking with an interactive dashboard.
 
@@ -196,4 +250,7 @@ The application is organized into modular services:
 Run `cargo test` to execute unit tests for database operations and core functionality.
 
 ## Contributing
-Modify individual services in their respective directories. Ensure changes maintain the modular structure and add appropriate tests.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
+
+## License
+This project is licensed under the [LICENSE](LICENSE) file.

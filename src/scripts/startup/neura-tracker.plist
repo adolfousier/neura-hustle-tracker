@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.neura.tracker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>osascript</string>
+        <string>-e</string>
+        <string>tell application "Terminal" to do script "sleep 30 && cd \"$(find ~ -name 'neura-hustle-tracker' -type d 2>/dev/null | head -1)\" && make run ; bash"</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
