@@ -1,19 +1,22 @@
 # Neura Hustle Tracker BETA
 
-A cross-platform time-tracking tool for monitoring your productivity through app usage during work sessions. Built with Rust, Ratatui for the UI and Postgres database. Supports Windows, macOS (macOS and Windows not tested yet, please if you try provide feedback), and Linux(X11, Wayland WIP).
+A cross-platform time-tracking tool for monitoring your productivity through app usage during work sessions. Built with Rust, Ratatui for the UI and Postgres database. Supports Windows, macOS (macOS and Windows not tested yet, please if you try provide feedback), and Linux (X11 and Wayland).
 
 ![Demo](src/screenshots/demo.png)
 
 ## Features
 - **Interactive Dashboard**: Comprehensive data visualization with bar charts, timelines, and statistics
-- **App Categorization**: Automatic categorization of apps (Development, Browsing, Communication, Media, Files, Other) with color coding
+- **App Categorization**: Automatic categorization of apps (Development, Browsing, Communication, Media, Files, Email, Office, Other) with color coding
 - **Fully Responsive Design**: Adaptive layout that adjusts to terminal size for optimal viewing on any device
 - **Cross-Platform Support**: Works on Linux (X11), macOS, and Windows
 - **Commands Menu**: Popup menu (Shift+C) showing all available shortcuts and commands
 - **Multiple Views**: Daily, Weekly, Monthly, and History views with Tab navigation
 - **App Renaming**: Interactive renaming of tracked applications
 - **Session Management**: Manual start/end sessions with automatic saving
-- **Real-time Tracking**: Live monitoring of active applications and usage time
+- **Real-time Tracking**: Live monitoring with 5-second dashboard updates and live session duration
+- **Enhanced App Detection**: Tracks editors (vim, emacs, vscode), file managers, terminals, chat apps, media players, email clients, and office suites
+- **Live Session Display**: Current active session shows real-time duration with [LIVE] indicator
+- **Timestamped Logs**: All log entries include timestamps for better debugging
 - **PostgreSQL Storage**: Persistent data storage with automatic migrations
 
 ### Feature Comparison
@@ -43,12 +46,12 @@ A cross-platform time-tracking tool for monitoring your productivity through app
 
 ##### Tracking
 
-|               | App & Window Title | AFK                | Browser Extensions | Editor Plugins     | Extensible            |
-| ------------- |:------------------:|:------------------:|:------------------:|:------------------:|:---------------------:|
-| HustleTracker | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :white_check_mark:    |
-| [RescueTime]  | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :x:                   |
-| [Selfspy]     | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   |
-| [ulogme]      | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   |
+|               | App & Window Title | AFK                | Browser Extensions | Editor Plugins     | Extensible            | Comprehensive App Detection |
+| ------------- |:------------------:|:------------------:|:------------------:|:------------------:|:---------------------:|:---------------------------:|
+| HustleTracker | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :white_check_mark:    | :white_check_mark:          |
+| [RescueTime]  | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x:                | :x:                   | :white_check_mark:          |
+| [Selfspy]     | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   | :x:                         |
+| [ulogme]      | :white_check_mark: | :white_check_mark: | :x:                | :x:                | :x:                   | :x:                         |
 
 ## Prerequisites
 - Rust 1.90+
@@ -168,12 +171,12 @@ The app provides a terminal-based interface for time tracking with an interactiv
 - **r**: Rename apps/tabs (arrow keys to navigate, Enter to select)
 - **m**: Manually set app name (if auto-detection fails)
 - **u**: Update current app detection
-- **l**: View application logs
+- **l**: View application logs with timestamps
 - **q**: Quit the application
 
 **Note**: The app starts tracking automatically when launched and displays visual analytics with bar charts and detailed statistics.
 
-Sessions automatically track the active application and duration. Data is saved to Postgres every 10 minutes automatically, or manually when ending a session.
+Sessions automatically track the active application and duration with real-time updates every 5 seconds. The current active session shows live duration with a [LIVE] indicator. Data is saved to Postgres every hour automatically, or when switching applications. Sessions shorter than 10 seconds are combined with consecutive sessions of the same app.
 
 ## Architecture
 The application is organized into modular services:

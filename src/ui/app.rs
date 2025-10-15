@@ -131,6 +131,9 @@ impl App {
         let mut last_save = Instant::now();
         let save_interval = Duration::from_secs(3600); // 1 hour
 
+        let mut last_data_refresh = Instant::now();
+        let data_refresh_interval = Duration::from_secs(5); // Refresh dashboard data every 5 seconds for near real-time updates
+
         loop {
             terminal.draw(|f| self.draw(f))?;
 
@@ -141,8 +144,8 @@ impl App {
             }
 
             // Check for app or window change
-            if let Ok(active_app) = self.monitor.get_active_app() {
-                let active_window = self.monitor.get_active_window_name().ok();
+            if let Ok(active_app) = self.monitor.get_active_app_async().await {
+                let active_window = self.monitor.get_active_window_name_async().await.ok();
                 if active_app != self.current_app || active_window != self.current_window {
                     self.switch_app(active_app.clone()).await?;
                     self.current_app = active_app;
@@ -248,12 +251,72 @@ impl App {
                     }
                 }
             }
+
+            // Refresh dashboard data every 5 seconds for near real-time updates
+            if last_data_refresh.elapsed() >= data_refresh_interval {
+                self.history = self.database.get_recent_sessions(30).await.unwrap_or_default();
+                self.usage = self.database.get_app_usage().await.unwrap_or_default();
+                self.daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
+                self.weekly_usage = self.database.get_weekly_usage().await.unwrap_or_default();
+                self.monthly_usage = self.database.get_monthly_usage().await.unwrap_or_default();
+
+                // Update current_history based on current view mode
+                if let AppState::Dashboard { ref view_mode } = self.state {
+                    self.current_history = match view_mode {
+                        ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                        ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                        ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                        ViewMode::History => self.history.clone(),
+                    };
+                }
+
+                // Update current session duration in history for real-time display
+                if let Some(current_session) = &self.current_session {
+                    let current_duration = Local::now().signed_duration_since(current_session.start_time).num_seconds();
+                    // Update the most recent session in history if it matches the current one
+                    if let Some(latest_session) = self.current_history.first_mut() {
+                        if latest_session.app_name == current_session.app_name &&
+                           latest_session.start_time == current_session.start_time {
+                            latest_session.duration = current_duration;
+                        }
+                    }
+                }
+
+                last_data_refresh = Instant::now();
+                log::debug!("Dashboard data refreshed");
+            }
         }
 
         // Save current session on exit
         if let Some(mut session) = self.current_session.take() {
             session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
-            if session.duration >= 10 {
+
+            // Check if we can combine with the last session of the same app
+            let should_combine = if session.duration < 10 {
+                // Try to find the last session of the same app and combine if it's recent
+                if let Some(last_session) = self.history.first() {
+                    // Only combine if the last session was of the same app and within the last 5 minutes
+                    let time_diff = session.start_time.signed_duration_since(last_session.start_time).num_seconds();
+                    last_session.app_name == session.app_name && time_diff < 300 // 5 minutes
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if should_combine && session.duration < 10 {
+                // Combine with the last session by extending its duration
+                if let Some(last_session) = self.history.first_mut() {
+                    last_session.duration += session.duration;
+                    if let Err(e) = self.database.update_session_duration(last_session.id.unwrap(), last_session.duration).await {
+                        log::error!("Failed to update combined session on exit: {}", e);
+                        self.logs.push(format!("Failed to combine session on exit: {}", e));
+                    } else {
+                        self.logs.push(format!("Combined short session on exit: {} +{}s", session.app_name, session.duration));
+                    }
+                }
+            } else if session.duration >= 10 {
                 if let Err(e) = self.database.insert_session(&session).await {
                     log::error!("Failed to save session on exit: {}", e);
                     self.logs.push(format!("Failed to save session: {}", e));
@@ -263,7 +326,7 @@ impl App {
                     self.logs.push(format!("Ended session: {} for {}s", session.app_name, session.duration));
                 }
             } else {
-                self.logs.push(format!("Skipped saving short session on exit: {} for {}s", session.app_name, session.duration));
+                self.logs.push(format!("[{}] Skipped saving short session on exit: {} for {}s", Local::now().format("%H:%M:%S"), session.app_name, session.duration));
             }
         }
 
@@ -644,49 +707,96 @@ impl App {
         // Adaptive number of items based on available height
         let max_items = (area.height.saturating_sub(2) as usize).min(30).max(5);
 
-        let history_items: Vec<ListItem> = self
-            .current_history
-            .iter()
-            .take(max_items)
-            .map(|session| {
-                let minutes = session.duration / 60;
-                let time = session.start_time.format("%H:%M");
+        let mut history_items: Vec<ListItem> = Vec::new();
 
-                // Create display name with window name if available
-                let display_name = if let Some(window_name) = &session.window_name {
-                    if area.width < 40 {
-                        // Truncate both app and window names for narrow terminals
-                        let app_short = if session.app_name.len() > 8 {
-                            format!("{}...", &session.app_name[..5])
-                        } else {
-                            session.app_name.clone()
-                        };
-                        let window_short = if window_name.len() > 8 {
-                            format!("{}...", &window_name[..5])
-                        } else {
-                            window_name.clone()
-                        };
-                        format!("{} ({})", app_short, window_short)
+        // Add current session first with real-time duration
+        if let Some(current_session) = &self.current_session {
+            let current_duration = Local::now().signed_duration_since(current_session.start_time).num_seconds();
+            let minutes = current_duration / 60;
+            let time = current_session.start_time.format("%H:%M");
+
+            // Create display name with window name if available
+            let display_name = if let Some(window_name) = &current_session.window_name {
+                if area.width < 40 {
+                    // Truncate both app and window names for narrow terminals
+                    let app_short = if current_session.app_name.len() > 8 {
+                        format!("{}...", &current_session.app_name[..5])
                     } else {
-                        format!("{} ({})", session.app_name, window_name)
+                        current_session.app_name.clone()
+                    };
+                    let window_short = if window_name.len() > 8 {
+                        format!("{}...", &window_name[..5])
+                    } else {
+                        window_name.clone()
+                    };
+                    format!("{} ({})", app_short, window_short)
+                } else {
+                    format!("{} ({})", current_session.app_name, window_name)
+                }
+            } else {
+                // Fallback to just app name if no window name
+                if area.width < 40 {
+                    if current_session.app_name.len() > 12 {
+                        format!("{}...", &current_session.app_name[..9])
+                    } else {
+                        current_session.app_name.clone()
                     }
                 } else {
-                    // Fallback to just app name if no window name
-                    if area.width < 40 {
-                        if session.app_name.len() > 12 {
-                            format!("{}...", &session.app_name[..9])
+                    current_session.app_name.clone()
+                }
+            };
+
+            let display = format!("{} - {}: {}m [LIVE]", time, display_name, minutes);
+            history_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Green)));
+        }
+
+        // Add historical sessions
+        let remaining_slots = max_items.saturating_sub(history_items.len());
+        history_items.extend(
+            self.current_history
+                .iter()
+                .take(remaining_slots)
+                .map(|session| {
+                    let minutes = session.duration / 60;
+                    let time = session.start_time.format("%H:%M");
+
+                    // Create display name with window name if available
+                    let display_name = if let Some(window_name) = &session.window_name {
+                        if area.width < 40 {
+                            // Truncate both app and window names for narrow terminals
+                            let app_short = if session.app_name.len() > 8 {
+                                format!("{}...", &session.app_name[..5])
+                            } else {
+                                session.app_name.clone()
+                            };
+                            let window_short = if window_name.len() > 8 {
+                                format!("{}...", &window_name[..5])
+                            } else {
+                                window_name.clone()
+                            };
+                            format!("{} ({})", app_short, window_short)
+                        } else {
+                            format!("{} ({})", session.app_name, window_name)
+                        }
+                    } else {
+                        // Fallback to just app name if no window name
+                        if area.width < 40 {
+                            if session.app_name.len() > 12 {
+                                format!("{}...", &session.app_name[..9])
+                            } else {
+                                session.app_name.clone()
+                            }
                         } else {
                             session.app_name.clone()
                         }
-                    } else {
-                        session.app_name.clone()
-                    }
-                };
+                    };
 
-                let display = format!("{} - {}: {}m", time, display_name, minutes);
-                ListItem::new(Line::from(display))
-            })
-            .collect();
+                    let display = format!("{} - {}: {}m", time, display_name, minutes);
+                    ListItem::new(Line::from(display))
+                })
+                .collect::<Vec<ListItem>>()
+        );
+
         let history_list = List::new(history_items)
             .block(Block::default().borders(Borders::ALL).title("📜 Session History"));
         f.render_widget(history_list, area);
@@ -697,18 +807,29 @@ impl App {
         let app_lower = app.to_lowercase();
         if app_lower.contains("code") || app_lower.contains("vim") || app_lower.contains("nvim") ||
            app_lower.contains("terminal") || app_lower.contains("alacritty") || app_lower.contains("kitty") ||
-           app_lower.contains("rust") || app_lower.contains("cargo") {
+           app_lower.contains("rust") || app_lower.contains("cargo") || app_lower.contains("editor") ||
+           app_lower.contains("vscode") || app_lower.contains("vscodium") {
             ("💻 Development", Color::Cyan)
         } else if app_lower.contains("browser") || app_lower.contains("chrome") || app_lower.contains("firefox") ||
-                  app_lower.contains("brave") || app_lower.contains("edge") {
+                  app_lower.contains("brave") || app_lower.contains("edge") || app_lower.contains("chromium") {
             ("🌐 Browsing", Color::LightBlue)
         } else if app_lower.contains("slack") || app_lower.contains("zoom") || app_lower.contains("teams") ||
-                  app_lower.contains("discord") || app_lower.contains("telegram") {
+                  app_lower.contains("discord") || app_lower.contains("telegram") || app_lower.contains("chat") ||
+                  app_lower.contains("signal") || app_lower.contains("element") || app_lower.contains("video-call") ||
+                  app_lower.contains("skype") || app_lower.contains("jitsi") {
             ("💬 Communication", Color::LightGreen)
-        } else if app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("music") {
+        } else if app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("music") ||
+                  app_lower.contains("media") || app_lower.contains("rhythmbox") || app_lower.contains("audacious") ||
+                  app_lower.contains("clementine") {
             ("🎵 Media", Color::LightMagenta)
-        } else if app_lower.contains("nautilus") || app_lower.contains("files") || app_lower.contains("dolphin") {
+        } else if app_lower.contains("nautilus") || app_lower.contains("files") || app_lower.contains("dolphin") ||
+                  app_lower.contains("file-manager") || app_lower.contains("thunar") || app_lower.contains("nemo") {
             ("📁 Files", Color::LightYellow)
+        } else if app_lower.contains("thunderbird") || app_lower.contains("evolution") || app_lower.contains("geary") ||
+                  app_lower.contains("email") {
+            ("📧 Email", Color::Yellow)
+        } else if app_lower.contains("libreoffice") || app_lower.contains("soffice") {
+            ("📄 Office", Color::Blue)
         } else {
             ("📦 Other", Color::White)
         }
@@ -737,6 +858,8 @@ impl App {
             "💬 Communication" => ("💬 Communication", Color::LightGreen),
             "🎵 Media" => ("🎵 Media", Color::LightMagenta),
             "📁 Files" => ("📁 Files", Color::LightYellow),
+            "📧 Email" => ("📧 Email", Color::Yellow),
+            "📄 Office" => ("📄 Office", Color::Blue),
             _ => ("📦 Other", Color::White),
         }
     }
@@ -861,22 +984,24 @@ impl App {
     }
 
     async fn start_tracking(&mut self) -> Result<()> {
-        let app_name = self.manual_app_name.clone().unwrap_or_else(|| {
-            match self.monitor.get_active_app() {
+        let app_name = if let Some(manual_name) = self.manual_app_name.clone() {
+            manual_name
+        } else {
+            match self.monitor.get_active_app_async().await {
                 Ok(detected) => {
                     self.current_app = detected.clone();
                     detected
                 }
                 Err(e) => {
                     let error_msg = format!("Window detection failed: {}", e);
-                    self.logs.push(error_msg.clone());
+                     self.logs.push(format!("[{}] {}", Local::now().format("%H:%M:%S"), error_msg));
                     eprintln!("{}", error_msg);
                     self.current_app = "Unknown".to_string();
                     "Unknown".to_string()
                 }
             }
-        });
-        let window_name = self.monitor.get_active_window_name().ok();
+        };
+        let window_name = self.monitor.get_active_window_name_async().await.ok();
         let start_time = Local::now();
         // Determine category from original app name
         let (category_name, _) = Self::categorize_app(&app_name);
@@ -890,7 +1015,7 @@ impl App {
         };
         self.current_session = Some(session);
         self.current_window = window_name;
-        self.logs.push(format!("Started tracking: {}", app_name));
+        self.logs.push(format!("[{}] Started tracking: {}", Local::now().format("%H:%M:%S"), app_name));
         Ok(())
     }
 
@@ -898,18 +1023,59 @@ impl App {
         // End current session
         if let Some(mut session) = self.current_session.take() {
             session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
-            if session.duration >= 10 {
+
+            // Check if we can combine with the last session of the same app
+            let should_combine = if session.duration < 10 {
+                // Try to find the last session of the same app and combine if it's recent
+                if let Some(last_session) = self.history.first() {
+                    // Only combine if the last session was of the same app and within the last 5 minutes
+                    let time_diff = session.start_time.signed_duration_since(last_session.start_time).num_seconds();
+                    last_session.app_name == session.app_name && time_diff < 300 // 5 minutes
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if should_combine && session.duration < 10 {
+                // Combine with the last session by extending its duration
+                if let Some(last_session) = self.history.first_mut() {
+                    last_session.duration += session.duration;
+                    if let Err(e) = self.database.update_session_duration(last_session.id.unwrap(), last_session.duration).await {
+                        log::error!("Failed to update combined session: {}", e);
+                    } else {
+                        self.logs.push(format!("Combined short session: {} +{}s", session.app_name, session.duration));
+                    }
+                }
+            } else if session.duration >= 10 {
+                // Save as normal session
                 if let Err(e) = self.database.insert_session(&session).await {
                     log::error!("Failed to save session: {}", e);
                 } else {
+                    // Refresh all usage data after saving session
                     self.usage = self.database.get_app_usage().await?;
+                    self.daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
+                    self.weekly_usage = self.database.get_weekly_usage().await.unwrap_or_default();
+                    self.monthly_usage = self.database.get_monthly_usage().await.unwrap_or_default();
+                    self.history = self.database.get_recent_sessions(30).await.unwrap_or_default();
+
+                    // Update current_history based on current view mode
+                    if let AppState::Dashboard { ref view_mode } = self.state {
+                        self.current_history = match view_mode {
+                            ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                            ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                            ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                            ViewMode::History => self.history.clone(),
+                        };
+                    }
                 }
             } else {
-                self.logs.push(format!("Skipped saving short session: {} for {}s", session.app_name, session.duration));
+                self.logs.push(format!("[{}] Skipped saving short session: {} for {}s", Local::now().format("%H:%M:%S"), session.app_name, session.duration));
             }
         }
         // Start new session
-        let window_name = self.monitor.get_active_window_name().ok();
+        let window_name = self.monitor.get_active_window_name_async().await.ok();
         let start_time = Local::now();
         // Determine category from original app name
         let (category_name, _) = Self::categorize_app(&new_app);
@@ -924,7 +1090,7 @@ impl App {
         self.current_session = Some(session);
         self.current_app = new_app.clone();
         self.current_window = window_name;
-        self.logs.push(format!("Switched to: {}", new_app));
+        self.logs.push(format!("[{}] Switched to: {}", Local::now().format("%H:%M:%S"), new_app));
         Ok(())
     }
 
@@ -991,7 +1157,7 @@ impl App {
                 if !buffer.is_empty() {
                     // Rename app in database
                     if let Err(e) = self.database.rename_app(&old_name, &buffer).await {
-                        self.logs.push(format!("Failed to rename app: {}", e));
+                        self.logs.push(format!("[{}] Failed to rename app: {}", Local::now().format("%H:%M:%S"), e));
                     } else {
                         // Update current session if it matches
                         if let Some(session) = &mut self.current_session {
@@ -1005,7 +1171,17 @@ impl App {
                         self.weekly_usage = self.database.get_weekly_usage().await?;
                         self.monthly_usage = self.database.get_monthly_usage().await?;
                         self.history = self.database.get_recent_sessions(30).await?;
-                        self.logs.push(format!("Renamed '{}' to '{}'", old_name, buffer));
+
+                        // Update current_history based on current view mode
+                        if let AppState::Dashboard { ref view_mode } = self.state {
+                            self.current_history = match view_mode {
+                                ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                                ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                                ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                                ViewMode::History => self.history.clone(),
+                            };
+                        }
+                        self.logs.push(format!("[{}] Renamed '{}' to '{}'", Local::now().format("%H:%M:%S"), old_name, buffer));
                     }
                 }
                 self.state = AppState::Dashboard { view_mode: ViewMode::Daily };

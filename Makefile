@@ -30,12 +30,12 @@ help:
 	@echo "Note: Credentials are auto-generated on first run!"
 
 # ONE COMMAND: Start DB + Build Release + Run
-run: db-up build
+run: check-wayland db-up build
 	@echo "Starting Neura Hustle Tracker..."
 	./$(BINARY)
 
 # Quick dev mode: Start DB + Run in debug mode (faster)
-dev: db-up
+dev: check-wayland db-up
 	@echo "Starting in development mode..."
 	cargo run
 
@@ -50,6 +50,35 @@ db-up:
 	docker-compose up -d
 	@echo "Waiting for database to be ready..."
 	@sleep 5
+
+# Check for Wayland and install extension if needed (Linux only)
+check-wayland:
+ifndef OS
+	@if [ "$$XDG_SESSION_TYPE" = "wayland" ] || [ -n "$$WAYLAND_DISPLAY" ]; then \
+		echo "Wayland session detected!"; \
+		echo "Checking for Window Calls GNOME extension..."; \
+		if ! gnome-extensions list 2>/dev/null | grep -q "window-calls"; then \
+			echo ""; \
+			echo "⚠️  WAYLAND SETUP REQUIRED ⚠️"; \
+			echo ""; \
+			echo "The 'Window Calls' GNOME extension is required for Wayland support."; \
+			echo ""; \
+			echo "Install it by visiting:"; \
+			echo "  https://extensions.gnome.org/extension/4724/window-calls/"; \
+			echo ""; \
+			echo "Or install Extension Manager:"; \
+			echo "  sudo apt install gnome-shell-extension-manager"; \
+			echo ""; \
+			echo "After installing, re-run 'make run'"; \
+			echo ""; \
+			exit 1; \
+		else \
+			echo "✓ Window Calls extension found!"; \
+		fi; \
+	else \
+		echo "X11 session detected - no additional setup needed."; \
+	fi
+endif
 
 # Stop PostgreSQL
 db-down:

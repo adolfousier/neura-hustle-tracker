@@ -91,6 +91,15 @@ impl Database {
         Ok(())
     }
 
+    pub async fn update_session_duration(&self, session_id: i32, new_duration: i64) -> Result<()> {
+        sqlx::query("UPDATE sessions SET duration = $1 WHERE id = $2")
+            .bind(new_duration)
+            .bind(session_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_daily_usage(&self) -> Result<Vec<(String, i64)>> {
         let rows = sqlx::query!(
             "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE DATE(start_time) = CURRENT_DATE GROUP BY app_name ORDER BY total_duration DESC"
