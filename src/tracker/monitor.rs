@@ -1,5 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
+use std::env;
 
 pub struct AppMonitor;
 
@@ -15,8 +16,9 @@ impl AppMonitor {
                 Ok(self.fix_app_name(active_window.app_name))
             }
             Err(_) => {
-                log::warn!("Failed to get active window. Make sure you're in a desktop environment with GUI windows.");
-                Ok("Unknown".to_string())
+                let error_msg = self.detect_environment_issue();
+                log::warn!("{}", error_msg);
+                Err(anyhow::anyhow!(error_msg))
             }
         }
     }
@@ -48,6 +50,40 @@ impl AppMonitor {
         } else {
             app
         }
+    }
+
+    fn detect_environment_issue(&self) -> String {
+        // Check if we're running on Wayland
+        let wayland_display = env::var("WAYLAND_DISPLAY").ok();
+        let xdg_session_type = env::var("XDG_SESSION_TYPE").ok();
+        let display = env::var("DISPLAY").ok();
+
+        if let Some(_wayland) = wayland_display {
+            if display.is_none() {
+                // Pure Wayland without XWayland
+                return "WAYLAND ERROR: Window tracking failed. active-win-pos-rs requires X11. \
+                        You're running pure Wayland without XWayland. \
+                        Solutions: (1) Enable XWayland in your compositor, \
+                        (2) Switch to an X11 session, or \
+                        (3) Run with: XDG_SESSION_TYPE=x11 cargo run".to_string();
+            } else {
+                // Wayland with XWayland available
+                return "WAYLAND WARNING: Window tracking failed. active-win-pos-rs requires X11. \
+                        You're on Wayland but XWayland is available. \
+                        Try running: XDG_SESSION_TYPE=x11 cargo run".to_string();
+            }
+        }
+
+        if let Some(session_type) = xdg_session_type {
+            if session_type == "wayland" {
+                return "WAYLAND ERROR: Window tracking failed. XDG_SESSION_TYPE=wayland detected. \
+                        active-win-pos-rs requires X11. Switch to an X11 session or run with: \
+                        XDG_SESSION_TYPE=x11 cargo run".to_string();
+            }
+        }
+
+        // Generic error if not Wayland
+        "Failed to get active window. Ensure you're in a desktop environment with X11 support.".to_string()
     }
 }
 

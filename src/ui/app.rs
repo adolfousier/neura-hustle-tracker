@@ -862,9 +862,19 @@ impl App {
 
     async fn start_tracking(&mut self) -> Result<()> {
         let app_name = self.manual_app_name.clone().unwrap_or_else(|| {
-            let detected = self.monitor.get_active_app().unwrap_or("Unknown".to_string());
-            self.current_app = detected.clone();
-            detected
+            match self.monitor.get_active_app() {
+                Ok(detected) => {
+                    self.current_app = detected.clone();
+                    detected
+                }
+                Err(e) => {
+                    let error_msg = format!("Window detection failed: {}", e);
+                    self.logs.push(error_msg.clone());
+                    eprintln!("{}", error_msg);
+                    self.current_app = "Unknown".to_string();
+                    "Unknown".to_string()
+                }
+            }
         });
         let window_name = self.monitor.get_active_window_name().ok();
         let start_time = Local::now();
