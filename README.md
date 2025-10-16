@@ -220,11 +220,10 @@ Or use Task Scheduler to run the batch file at logon.
 The app provides a terminal-based interface for time tracking with an interactive dashboard.
 
 ### Commands
-- **Tab**: Switch between dashboard views (Daily/Weekly/Monthly/History)
+- **Tab**: Switch between dashboard views (Daily/Weekly/Monthly)
+- **h**: View full session history (scrollable popup with ↑/↓/PgUp/PgDn)
 - **Shift+C**: Open commands popup menu with all available shortcuts
 - **r**: Rename apps/tabs (arrow keys to navigate, Enter to select)
-- **m**: Manually set app name (if auto-detection fails)
-- **u**: Update current app detection
 - **l**: View application logs with timestamps
 - **q**: Quit the application
 

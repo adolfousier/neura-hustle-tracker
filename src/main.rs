@@ -11,7 +11,11 @@ use crate::ui::app::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init();
+    // Configure logging to reduce zbus verbosity
+    env_logger::Builder::from_env(
+        env_logger::Env::default()
+            .default_filter_or("neura_hustle_tracker=debug,warn")  // Only show our app at debug, others at warn
+    ).init();
     log::info!("Starting time tracker app");
     let settings = Settings::new().unwrap();
     log::info!("Connecting to database...");

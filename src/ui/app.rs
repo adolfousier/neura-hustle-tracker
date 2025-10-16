@@ -21,19 +21,27 @@ use std::sync::{Arc, Mutex};
 use crate::database::connection::Database;
 use crate::models::session::Session;
 use crate::tracker::monitor::AppMonitor;
+use crate::tracker::parser;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {
     Daily,
     Weekly,
     Monthly,
-    History,
 }
 
 #[derive(Debug, Clone)]
 pub enum InputAction {
     RenameApp { old_name: String },
-    SetAppName,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BreakdownView {
+    Category,
+    Browser,
+    Projects,
+    Files,
+    Terminal,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +51,8 @@ pub enum AppState {
     SelectingApp { selected_index: usize },
     Input { prompt: String, buffer: String, action: InputAction },
     CommandsPopup,
+    HistoryPopup { view_mode: ViewMode, scroll_position: usize },
+    BreakdownPopup { view_mode: ViewMode, view: BreakdownView, scroll_position: usize },
 }
 
 pub struct App {
@@ -55,12 +65,19 @@ pub struct App {
     daily_usage: Vec<(String, i64)>,
     weekly_usage: Vec<(String, i64)>,
     monthly_usage: Vec<(String, i64)>,
+    current_view_mode: ViewMode,  // Track current dashboard view mode
     logs: Vec<String>,
     manual_app_name: Option<String>,
     current_app: String,
     current_window: Option<String>,
     current_session: Option<Session>,
     last_input: Arc<Mutex<DateTime<Local>>>,
+    // Breakdown data caches
+    browser_breakdown: Vec<(String, i64)>,
+    project_breakdown: Vec<(String, i64)>,
+    file_breakdown: Vec<(String, String, i64)>,
+    terminal_breakdown: Vec<(String, i64)>,
+    category_breakdown: Vec<(String, i64)>,
 }
 
 impl App {
@@ -84,12 +101,18 @@ impl App {
             daily_usage: vec![],
             weekly_usage: vec![],
             monthly_usage: vec![],
+            current_view_mode: ViewMode::Daily,
             logs: vec![],
             manual_app_name: None,
             current_app: "unknown".to_string(),
             current_window: None,
             current_session: None,
             last_input,
+            browser_breakdown: vec![],
+            project_breakdown: vec![],
+            file_breakdown: vec![],
+            terminal_breakdown: vec![],
+            category_breakdown: vec![],
         }
     }
 
@@ -227,88 +250,194 @@ impl App {
 
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
-                    match &mut self.state {
+                    log::debug!("Key pressed: {:?} in state: {:?}", key.code, self.state);
+                    self.logs.push(format!("[{}] Key: {:?} State: {:?}", Local::now().format("%H:%M:%S"), key.code, self.state));
 
-                        AppState::ViewingLogs => {
-                            match key.code {
-                                KeyCode::Char('q') => break,
-                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
-                                _ => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
-                            }
-                        }
-
-                        AppState::SelectingApp { selected_index } => {
-                            match key.code {
-                                KeyCode::Up => {
-                                    if *selected_index > 0 {
-                                        *selected_index -= 1;
-                                    }
-                                }
-                                KeyCode::Down => {
-                                    if *selected_index < self.usage.len().saturating_sub(1) {
-                                        *selected_index += 1;
-                                    }
-                                }
-                                KeyCode::Enter => {
-                                    if let Some((app_name, _)) = self.usage.get(*selected_index) {
-                                        self.start_rename_app(app_name.clone());
-                                    }
-                                }
-                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
-                                _ => {}
-                            }
-                        }
-
-                        AppState::Input { buffer, .. } => {
-                            match key.code {
-                                KeyCode::Char(c) => buffer.push(c),
-                                KeyCode::Backspace => { buffer.pop(); }
-                                KeyCode::Enter => self.handle_input().await?,
-                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
-                                _ => {}
-                            }
-                        }
-                        AppState::Dashboard { view_mode } => {
-                            match key.code {
-                                KeyCode::Char('q') => break,
-                                KeyCode::Char('r') => self.start_app_selection(),
-                                KeyCode::Char('m') => self.start_set_app_name(),
-                                KeyCode::Char('u') => self.update_current_app(),
-                                KeyCode::Char('l') => self.view_logs(),
-                                KeyCode::Char('C') => self.state = AppState::CommandsPopup,  // Shift+C
-                                KeyCode::Tab => {
-                                     *view_mode = match view_mode {
-                                         ViewMode::Daily => ViewMode::Weekly,
-                                         ViewMode::Weekly => ViewMode::Monthly,
-                                         ViewMode::Monthly => ViewMode::History,
-                                         ViewMode::History => ViewMode::Daily,
-                                     };
-                                     self.update_history().await?;
+                     let dashboard_view_mode = match &self.state {
+                         AppState::Dashboard { view_mode } => Some(view_mode.clone()),
+                         _ => None,
+                     };
+                     if dashboard_view_mode.is_some() {
+                         let view_mode = dashboard_view_mode.as_ref().unwrap();
+                         match key.code {
+                             KeyCode::Char('q') => break,
+                             KeyCode::Char('r') => self.start_app_selection(),
+                             KeyCode::Char('l') => self.view_logs(),
+                             KeyCode::Char('C') => self.state = AppState::CommandsPopup,
+                             KeyCode::Tab => {
+                                 let new_view_mode = match view_mode {
+                                     ViewMode::Daily => ViewMode::Weekly,
+                                     ViewMode::Weekly => ViewMode::Monthly,
+                                     ViewMode::Monthly => ViewMode::Daily,
+                                 };
+                                 self.current_view_mode = new_view_mode.clone();
+                                 self.update_history().await?;
+                                 self.state = AppState::Dashboard { view_mode: new_view_mode };
+                             }
+                             KeyCode::Char('h') => {
+                                 log::debug!("'h' key pressed - opening history popup");
+                                 self.logs.push(format!("[{}] Opening history popup", Local::now().format("%H:%M:%S")));
+                                 self.current_history = match view_mode {
+                                     ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                                     ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                                     ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                                 };
+                                 self.state = AppState::HistoryPopup { view_mode: view_mode.clone(), scroll_position: 0 };
+                             }
+                             KeyCode::Char('b') => {
+                                 log::debug!("'b' key pressed - opening breakdown popup");
+                                 self.logs.push(format!("[{}] Opening breakdown popup", Local::now().format("%H:%M:%S")));
+                                 if let Err(e) = self.load_breakdown_data().await {
+                                     log::error!("Failed to load breakdown data: {}", e);
+                                     self.logs.push(format!("[{}] Failed to load breakdown data: {}", Local::now().format("%H:%M:%S"), e));
                                  }
-                                _ => {}
-                            }
-                        }
-                        AppState::CommandsPopup => {
-                            match key.code {
-                                KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
-                                KeyCode::Char('q') => break,
-                                KeyCode::Char('r') => {
-                                    self.start_app_selection();
-                                }
-                                KeyCode::Char('m') => {
-                                    self.start_set_app_name();
-                                }
-                                KeyCode::Char('u') => {
-                                    self.update_current_app();
-                                    self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
-                                }
-                                KeyCode::Char('l') => {
-                                    self.view_logs();
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
+                                 self.current_history = match view_mode {
+                                     ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                                     ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                                     ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                                 };
+                                 self.state = AppState::BreakdownPopup {
+                                     view_mode: view_mode.clone(),
+                                     view: BreakdownView::Category,
+                                     scroll_position: 0
+                                 };
+                             }
+                             _ => {}
+                         }
+                     } else if matches!(self.state, AppState::CommandsPopup) {
+                         match key.code {
+                             KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                             KeyCode::Char('q') => break,
+                             KeyCode::Char('r') => self.start_app_selection(),
+                             KeyCode::Char('l') => self.view_logs(),
+                             KeyCode::Char('h') => {
+                                 log::debug!("'h' key pressed from CommandsPopup - opening history popup");
+                                 self.logs.push(format!("[{}] Opening history popup from commands menu", Local::now().format("%H:%M:%S")));
+                                 self.current_history = match &self.current_view_mode {
+                                     ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                                     ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                                     ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                                 };
+                                 self.state = AppState::HistoryPopup { view_mode: self.current_view_mode.clone(), scroll_position: 0 };
+                             }
+                             KeyCode::Char('b') => {
+                                 log::debug!("'b' key pressed from CommandsPopup - opening breakdown popup");
+                                 self.logs.push(format!("[{}] Opening breakdown popup from commands menu", Local::now().format("%H:%M:%S")));
+                                 if let Err(e) = self.load_breakdown_data().await {
+                                     log::error!("Failed to load breakdown data: {}", e);
+                                     self.logs.push(format!("[{}] Failed to load breakdown data: {}", Local::now().format("%H:%M:%S"), e));
+                                 }
+                                 self.current_history = match &self.current_view_mode {
+                                     ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                                     ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                                     ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                                 };
+                                 self.state = AppState::BreakdownPopup {
+                                     view_mode: self.current_view_mode.clone(),
+                                     view: BreakdownView::Category,
+                                     scroll_position: 0
+                                 };
+                             }
+                             _ => {}
+                         }
+                     } else {
+                         match &mut self.state {
+                             AppState::ViewingLogs => {
+                                 match key.code {
+                                     KeyCode::Char('q') => break,
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                     _ => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                 }
+                             }
+                             AppState::SelectingApp { selected_index } => {
+                                 match key.code {
+                                     KeyCode::Up => {
+                                         if *selected_index > 0 {
+                                             *selected_index -= 1;
+                                         }
+                                     }
+                                     KeyCode::Down => {
+                                         if *selected_index < self.usage.len().saturating_sub(1) {
+                                             *selected_index += 1;
+                                         }
+                                     }
+                                     KeyCode::Enter => {
+                                         if let Some((app_name, _)) = self.usage.get(*selected_index) {
+                                             self.start_rename_app(app_name.clone());
+                                         }
+                                     }
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                     _ => {}
+                                 }
+                             }
+                             AppState::Input { buffer, .. } => {
+                                 match key.code {
+                                     KeyCode::Char(c) => buffer.push(c),
+                                     KeyCode::Backspace => { buffer.pop(); }
+                                     KeyCode::Enter => self.handle_input().await?,
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                     _ => {}
+                                 }
+                             }
+                             AppState::HistoryPopup { view_mode, scroll_position } => {
+                                 match key.code {
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: view_mode.clone() },
+                                     KeyCode::Char('q') => break,
+                                     KeyCode::Up => {
+                                         if *scroll_position > 0 {
+                                             *scroll_position -= 1;
+                                         }
+                                     }
+                                     KeyCode::Down => {
+                                         let max_scroll = self.current_history.len().saturating_sub(1);
+                                         if *scroll_position < max_scroll {
+                                             *scroll_position += 1;
+                                         }
+                                     }
+                                     KeyCode::PageUp => {
+                                         *scroll_position = scroll_position.saturating_sub(10);
+                                     }
+                                     KeyCode::PageDown => {
+                                         let max_scroll = self.current_history.len().saturating_sub(1);
+                                         *scroll_position = (*scroll_position + 10).min(max_scroll);
+                                     }
+                                     _ => {}
+                                 }
+                             }
+                             AppState::BreakdownPopup { view_mode, view, scroll_position } => {
+                                 match key.code {
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: view_mode.clone() },
+                                     KeyCode::Char('q') => break,
+                                     KeyCode::Tab => {
+                                         *view = match view {
+                                             BreakdownView::Category => BreakdownView::Browser,
+                                             BreakdownView::Browser => BreakdownView::Projects,
+                                             BreakdownView::Projects => BreakdownView::Files,
+                                             BreakdownView::Files => BreakdownView::Terminal,
+                                             BreakdownView::Terminal => BreakdownView::Category,
+                                         };
+                                         *scroll_position = 0;
+                                     }
+                                     KeyCode::Up => {
+                                         if *scroll_position > 0 {
+                                             *scroll_position -= 1;
+                                         }
+                                     }
+                                     KeyCode::Down => {
+                                         *scroll_position += 1;
+                                     }
+                                     KeyCode::PageUp => {
+                                         *scroll_position = scroll_position.saturating_sub(10);
+                                     }
+                                     KeyCode::PageDown => {
+                                         *scroll_position += 10;
+                                     }
+                                     _ => {}
+                                 }
+                             }
+                             _ => {}
+                         }
+                     }
                 }
             }
 
@@ -338,7 +467,6 @@ impl App {
                         ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
                         ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
                         ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
-                        ViewMode::History => self.history.clone(),
                     };
                 }
 
@@ -363,42 +491,14 @@ impl App {
         if let Some(mut session) = self.current_session.take() {
             session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
 
-            // Check if we can combine with the last session of the same app
-            let should_combine = if session.duration < 10 {
-                // Try to find the last session of the same app and combine if it's recent
-                if let Some(last_session) = self.history.first() {
-                    // Only combine if the last session was of the same app and within the last 5 minutes
-                    let time_diff = session.start_time.signed_duration_since(last_session.start_time).num_seconds();
-                    last_session.app_name == session.app_name && time_diff < 300 // 5 minutes
-                } else {
-                    false
-                }
+            // Save ALL sessions regardless of duration
+            if let Err(e) = self.database.insert_session(&session).await {
+                log::error!("Failed to save session on exit: {}", e);
+                self.logs.push(format!("Failed to save session: {}", e));
             } else {
-                false
-            };
-
-            if should_combine && session.duration < 10 {
-                // Combine with the last session by extending its duration
-                if let Some(last_session) = self.history.first_mut() {
-                    last_session.duration += session.duration;
-                    if let Err(e) = self.database.update_session_duration(last_session.id.unwrap(), last_session.duration).await {
-                        log::error!("Failed to update combined session on exit: {}", e);
-                        self.logs.push(format!("Failed to combine session on exit: {}", e));
-                    } else {
-                        self.logs.push(format!("Combined short session on exit: {} +{}s", session.app_name, session.duration));
-                    }
-                }
-            } else if session.duration >= 10 {
-                if let Err(e) = self.database.insert_session(&session).await {
-                    log::error!("Failed to save session on exit: {}", e);
-                    self.logs.push(format!("Failed to save session: {}", e));
-                } else {
-                    self.history = self.database.get_recent_sessions(30).await?;
-                    self.usage = self.database.get_app_usage().await?;
-                    self.logs.push(format!("Ended session: {} for {}s", session.app_name, session.duration));
-                }
-            } else {
-                self.logs.push(format!("[{}] Skipped saving short session on exit: {} for {}s", Local::now().format("%H:%M:%S"), session.app_name, session.duration));
+                self.history = self.database.get_recent_sessions(30).await?;
+                self.usage = self.database.get_app_usage().await?;
+                self.logs.push(format!("[{}] Ended session: {} for {}s", Local::now().format("%H:%M:%S"), session.app_name, session.duration));
             }
         }
 
@@ -420,9 +520,9 @@ impl App {
                 if let Some(session) = &self.current_session {
                     let duration = Local::now().signed_duration_since(session.start_time).num_seconds();
                     let display_name = self.manual_app_name.as_ref().unwrap_or(&session.app_name);
-                    format!("Tracking: {} for {}s | [Shift+C] Commands", display_name, duration)
+                    format!("Tracking: {} for {}s | [Shift+C] Commands | [h] History", display_name, duration)
                 } else {
-                    format!("Not tracking - Current app: {} | [Shift+C] Commands", self.current_app)
+                    format!("Not tracking - Current app: {} | [Shift+C] Commands | [h] History", self.current_app)
                 }
             }
             AppState::ViewingLogs => "Viewing Logs - Press any key to return".to_string(),
@@ -430,10 +530,20 @@ impl App {
             AppState::Input { action, .. } => {
                 match action {
                     InputAction::RenameApp { .. } => "Rename Mode - Enter new name for the app".to_string(),
-                    InputAction::SetAppName => "Manual App Name - Enter the app name to track".to_string(),
                 }
             }
             AppState::CommandsPopup => "Commands Menu - Press key to execute or Esc to close".to_string(),
+            AppState::HistoryPopup { .. } => "Session History - Use ↑/↓/PgUp/PgDn to scroll, Esc to close".to_string(),
+            AppState::BreakdownPopup { view, .. } => {
+                let view_name = match view {
+                    BreakdownView::Category => "Category",
+                    BreakdownView::Browser => "Browser",
+                    BreakdownView::Projects => "Projects",
+                    BreakdownView::Files => "Files",
+                    BreakdownView::Terminal => "Terminal",
+                };
+                format!("📊 Breakdown: {} - [Tab] Switch View | [↑/↓] Scroll | [Esc] Close", view_name)
+            }
         };
 
         let status_widget = Paragraph::new(status)
@@ -503,7 +613,6 @@ impl App {
                 // Determine title based on action
                 let title = match action {
                     InputAction::RenameApp { .. } => "✏️  Rename App",
-                    InputAction::SetAppName => "🏷️  Set App Name",
                 };
 
                 // Create input text with cursor
@@ -543,10 +652,10 @@ impl App {
 
                 let commands_text = vec![
                     Line::from(""),
-                    Line::from("  [Tab]  Switch View (Daily/Weekly/Monthly/History)"),
+                    Line::from("  [Tab]  Switch View (Daily/Weekly/Monthly)"),
+                    Line::from("  [h]    View session history (scrollable popup)"),
+                    Line::from("  [b]    View activity breakdowns (scrollable popup)"),
                     Line::from("  [r]    Rename app/tab"),
-                    Line::from("  [m]    Manually set app name"),
-                    Line::from("  [u]    Update current app detection"),
                     Line::from("  [l]    View logs"),
                     Line::from("  [q]    Quit application (auto-saves)"),
                     Line::from(""),
@@ -559,6 +668,232 @@ impl App {
                         .title("📋 Commands Menu")
                         .style(Style::default().bg(Color::Black)));
                 f.render_widget(popup, popup_area);
+            }
+
+            AppState::HistoryPopup { view_mode, scroll_position } => {
+                // Show dashboard in background
+                self.draw_dashboard(f, chunks[1], view_mode);
+
+                // Draw popup overlay
+                let popup_area = Self::centered_rect(80, 70, size);
+                f.render_widget(ratatui::widgets::Clear, popup_area);
+
+                // Calculate how many items can fit in the popup
+                let max_visible_items = (popup_area.height.saturating_sub(4) as usize).max(10);
+
+                // Create history list items
+                let mut history_items: Vec<ListItem> = Vec::new();
+
+                // Get the visible slice of history based on scroll position
+                let start_idx = *scroll_position;
+                let end_idx = (start_idx + max_visible_items).min(self.current_history.len());
+
+                for (idx, session) in self.current_history[start_idx..end_idx].iter().enumerate() {
+                    let minutes = session.duration / 60;
+                    let time = session.start_time.format("%Y-%m-%d %H:%M");
+
+                    // Create display name with window name if available
+                    let display_name = if let Some(window_name) = &session.window_name {
+                        format!("{} ({})", session.app_name, window_name)
+                    } else {
+                        session.app_name.clone()
+                    };
+
+                    let display = format!("{}  {} - {}m", time, display_name, minutes);
+                    let style = if idx == 0 && start_idx == 0 {
+                        Style::default().fg(Color::Yellow)  // Highlight first (most recent)
+                    } else {
+                        Style::default()
+                    };
+
+                    history_items.push(ListItem::new(Line::from(display)).style(style));
+                }
+
+                // Add indicator if there are more items to scroll
+                let scroll_indicator = if self.current_history.len() > max_visible_items {
+                    format!(" (Showing {}-{} of {} sessions)", start_idx + 1, end_idx, self.current_history.len())
+                } else {
+                    format!(" ({} sessions)", self.current_history.len())
+                };
+
+                let history_list = List::new(history_items)
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!("📜 Session History{}", scroll_indicator))
+                        .style(Style::default().bg(Color::Black)));
+                f.render_widget(history_list, popup_area);
+            }
+
+            AppState::BreakdownPopup { view_mode, view, scroll_position } => {
+                // Show dashboard in background
+                self.draw_dashboard(f, chunks[1], view_mode);
+
+                // Draw popup overlay
+                let popup_area = Self::centered_rect(80, 70, size);
+                f.render_widget(ratatui::widgets::Clear, popup_area);
+
+                // Calculate how many items can fit in the popup
+                let max_visible_items = (popup_area.height.saturating_sub(4) as usize).max(10);
+
+                let mut breakdown_items: Vec<ListItem> = Vec::new();
+
+                // Use database breakdown for Daily, aggregate from sessions for Weekly/Monthly
+                match view {
+                    BreakdownView::Category => {
+                        // For Daily: use efficient database query; for Weekly/Monthly: aggregate from sessions
+                        let data = if matches!(view_mode, ViewMode::Daily) {
+                            self.category_breakdown.clone()
+                        } else {
+                            // Aggregate from current_history for weekly/monthly
+                            let mut categories: BTreeMap<String, i64> = BTreeMap::new();
+                            for session in &self.current_history {
+                                if let Some(category) = &session.category {
+                                    *categories.entry(category.clone()).or_insert(0) += session.duration;
+                                }
+                            }
+                            let mut sorted: Vec<(String, i64)> = categories.into_iter().collect();
+                            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+                            sorted
+                        };
+
+                        let start_idx = *scroll_position;
+                        let end_idx = (start_idx + max_visible_items).min(data.len());
+
+                        if data.is_empty() {
+                            breakdown_items.push(ListItem::new(Line::from("No category data available")));
+                        } else {
+                            for (category, duration) in &data[start_idx..end_idx] {
+                                let hours = duration / 3600;
+                                let minutes = (duration % 3600) / 60;
+                                let time_str = if hours > 0 {
+                                    format!("{}h {}m", hours, minutes)
+                                } else {
+                                    format!("{}m", minutes)
+                                };
+
+                                let (_, color) = Self::category_from_string(category);
+                                let display = format!("{}  {}", category, time_str);
+                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(color)));
+                            }
+                        }
+                    }
+                    BreakdownView::Browser => {
+                        let start_idx = *scroll_position;
+                        let end_idx = (start_idx + max_visible_items).min(self.browser_breakdown.len());
+
+                        if self.browser_breakdown.is_empty() {
+                            breakdown_items.push(ListItem::new(Line::from("No browser data available")));
+                        } else {
+                            for (service, duration) in &self.browser_breakdown[start_idx..end_idx] {
+                                let hours = duration / 3600;
+                                let minutes = (duration % 3600) / 60;
+                                let time_str = if hours > 0 {
+                                    format!("{}h {}m", hours, minutes)
+                                } else {
+                                    format!("{}m", minutes)
+                                };
+
+                                let display = format!("{}  {}", service, time_str);
+                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Blue)));
+                            }
+                        }
+                    }
+                    BreakdownView::Projects => {
+                        let start_idx = *scroll_position;
+                        let end_idx = (start_idx + max_visible_items).min(self.project_breakdown.len());
+
+                        if self.project_breakdown.is_empty() {
+                            breakdown_items.push(ListItem::new(Line::from("No project data available")));
+                        } else {
+                            for (project, duration) in &self.project_breakdown[start_idx..end_idx] {
+                                let hours = duration / 3600;
+                                let minutes = (duration % 3600) / 60;
+                                let time_str = if hours > 0 {
+                                    format!("{}h {}m", hours, minutes)
+                                } else {
+                                    format!("{}m", minutes)
+                                };
+
+                                let display = format!("{}  {}", project, time_str);
+                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Yellow)));
+                            }
+                        }
+                    }
+                    BreakdownView::Files => {
+                        let start_idx = *scroll_position;
+                        let end_idx = (start_idx + max_visible_items).min(self.file_breakdown.len());
+
+                        if self.file_breakdown.is_empty() {
+                            breakdown_items.push(ListItem::new(Line::from("No file editing data available")));
+                        } else {
+                            for (filename, language, duration) in &self.file_breakdown[start_idx..end_idx] {
+                                let hours = duration / 3600;
+                                let minutes = (duration % 3600) / 60;
+                                let time_str = if hours > 0 {
+                                    format!("{}h {}m", hours, minutes)
+                                } else {
+                                    format!("{}m", minutes)
+                                };
+
+                                let display = format!("{} ({})  {}", filename, language, time_str);
+                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Cyan)));
+                            }
+                        }
+                    }
+                    BreakdownView::Terminal => {
+                        let start_idx = *scroll_position;
+                        let end_idx = (start_idx + max_visible_items).min(self.terminal_breakdown.len());
+
+                        if self.terminal_breakdown.is_empty() {
+                            breakdown_items.push(ListItem::new(Line::from("No terminal session data available")));
+                        } else {
+                            for (terminal_session, duration) in &self.terminal_breakdown[start_idx..end_idx] {
+                                let hours = duration / 3600;
+                                let minutes = (duration % 3600) / 60;
+                                let time_str = if hours > 0 {
+                                    format!("{}h {}m", hours, minutes)
+                                } else {
+                                    format!("{}m", minutes)
+                                };
+
+                                let display = format!("{}  {}", terminal_session, time_str);
+                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Green)));
+                            }
+                        }
+                    }
+                }
+
+                // Add scroll indicator
+                let total_items = match view {
+                    BreakdownView::Category => self.category_breakdown.len(),
+                    BreakdownView::Browser => self.browser_breakdown.len(),
+                    BreakdownView::Projects => self.project_breakdown.len(),
+                    BreakdownView::Files => self.file_breakdown.len(),
+                    BreakdownView::Terminal => self.terminal_breakdown.len(),
+                };
+
+                let view_name = match view {
+                    BreakdownView::Category => "Category Breakdown",
+                    BreakdownView::Browser => "Browser/Service Breakdown",
+                    BreakdownView::Projects => "Project Breakdown",
+                    BreakdownView::Files => "Files Breakdown",
+                    BreakdownView::Terminal => "Terminal Sessions Breakdown",
+                };
+
+                let scroll_indicator = if total_items > max_visible_items {
+                    let start_idx = *scroll_position;
+                    let end_idx = (start_idx + max_visible_items).min(total_items);
+                    format!(" (Showing {}-{} of {})", start_idx + 1, end_idx, total_items)
+                } else {
+                    format!(" ({} items)", total_items)
+                };
+
+                let breakdown_list = List::new(breakdown_items)
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!("📊 {}{}", view_name, scroll_indicator))
+                        .style(Style::default().bg(Color::Black)));
+                f.render_widget(breakdown_list, popup_area);
             }
         }
     }
@@ -592,7 +927,6 @@ impl App {
             ViewMode::Daily => (&self.daily_usage, "📊 Daily Usage"),
             ViewMode::Weekly => (&self.weekly_usage, "📊 Weekly Usage (7 days)"),
             ViewMode::Monthly => (&self.monthly_usage, "📊 Monthly Usage (30 days)"),
-            ViewMode::History => (&self.daily_usage, "📊 Daily Usage"), // Default to daily when in history view
         };
 
         // Create bar chart data - limit based on space
@@ -1098,6 +1432,53 @@ impl App {
         f.render_widget(afk_paragraph, area);
     }
 
+    // Helper function to create a session with parsed data
+    fn create_session_with_parsing(app_name: String, window_name: Option<String>, start_time: DateTime<Local>, category: String) -> Session {
+        // Parse window name if available
+        let parsed = if let Some(ref win_name) = window_name {
+            parser::parse_window_name(&app_name, win_name)
+        } else {
+            parser::ParsedSessionData::default()
+        };
+
+        // Convert parsed data to JSON
+        let parsed_json = serde_json::to_value(&parsed).ok();
+
+        Session {
+            id: None,
+            app_name,
+            window_name,
+            start_time,
+            duration: 0,
+            category: Some(category),
+            // Browser fields
+            browser_url: parsed.browser_url,
+            browser_page_title: parsed.browser_page_title,
+            browser_notification_count: parsed.browser_notification_count,
+            // Terminal fields
+            terminal_username: parsed.terminal_username,
+            terminal_hostname: parsed.terminal_hostname,
+            terminal_directory: parsed.terminal_directory,
+            terminal_project_name: parsed.terminal_project_name,
+            // Editor fields
+            editor_filename: parsed.editor_filename,
+            editor_filepath: parsed.editor_filepath,
+            editor_project_path: parsed.editor_project_path,
+            editor_language: parsed.editor_language,
+            // Multiplexer fields
+            tmux_window_name: parsed.tmux_window_name,
+            tmux_pane_count: parsed.tmux_pane_count,
+            terminal_multiplexer: parsed.terminal_multiplexer,
+            // IDE fields
+            ide_project_name: parsed.ide_project_name,
+            ide_file_open: parsed.ide_file_open,
+            ide_workspace: parsed.ide_workspace,
+            // Metadata
+            parsed_data: parsed_json,
+            parsing_success: Some(parsed.parsing_success),
+        }
+    }
+
     async fn start_tracking(&mut self) -> Result<()> {
         let app_name = if let Some(manual_name) = self.manual_app_name.clone() {
             manual_name
@@ -1120,14 +1501,15 @@ impl App {
         let start_time = Local::now();
         // Determine category from original app name
         let (category_name, _) = Self::categorize_app(&app_name);
-        let session = Session {
-            id: None,
-            app_name: app_name.clone(),
-            window_name: window_name.clone(),
+
+        // Create session with parsed data
+        let session = Self::create_session_with_parsing(
+            app_name.clone(),
+            window_name.clone(),
             start_time,
-            duration: 0,
-            category: Some(category_name.to_string()),
-        };
+            category_name.to_string(),
+        );
+
         self.current_session = Some(session);
         self.current_window = window_name;
         self.logs.push(format!("[{}] Started tracking: {}", Local::now().format("%H:%M:%S"), app_name));
@@ -1139,54 +1521,27 @@ impl App {
         if let Some(mut session) = self.current_session.take() {
             session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
 
-            // Check if we can combine with the last session of the same app
-            let should_combine = if session.duration < 10 {
-                // Try to find the last session of the same app and combine if it's recent
-                if let Some(last_session) = self.history.first() {
-                    // Only combine if the last session was of the same app and within the last 5 minutes
-                    let time_diff = session.start_time.signed_duration_since(last_session.start_time).num_seconds();
-                    last_session.app_name == session.app_name && time_diff < 300 // 5 minutes
-                } else {
-                    false
-                }
+            // Save ALL sessions regardless of duration
+            if let Err(e) = self.database.insert_session(&session).await {
+                log::error!("Failed to save session: {}", e);
+                self.logs.push(format!("[{}] Failed to save session: {}", Local::now().format("%H:%M:%S"), e));
             } else {
-                false
-            };
+                // Refresh all usage data after saving session
+                self.usage = self.database.get_app_usage().await?;
+                self.daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
+                self.weekly_usage = self.database.get_weekly_usage().await.unwrap_or_default();
+                self.monthly_usage = self.database.get_monthly_usage().await.unwrap_or_default();
+                self.history = self.database.get_recent_sessions(30).await.unwrap_or_default();
 
-            if should_combine && session.duration < 10 {
-                // Combine with the last session by extending its duration
-                if let Some(last_session) = self.history.first_mut() {
-                    last_session.duration += session.duration;
-                    if let Err(e) = self.database.update_session_duration(last_session.id.unwrap(), last_session.duration).await {
-                        log::error!("Failed to update combined session: {}", e);
-                    } else {
-                        self.logs.push(format!("Combined short session: {} +{}s", session.app_name, session.duration));
-                    }
+                // Update current_history based on current view mode
+                if let AppState::Dashboard { ref view_mode } = self.state {
+                    self.current_history = match view_mode {
+                        ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                        ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                        ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                    };
                 }
-            } else if session.duration >= 10 {
-                // Save as normal session
-                if let Err(e) = self.database.insert_session(&session).await {
-                    log::error!("Failed to save session: {}", e);
-                } else {
-                    // Refresh all usage data after saving session
-                    self.usage = self.database.get_app_usage().await?;
-                    self.daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
-                    self.weekly_usage = self.database.get_weekly_usage().await.unwrap_or_default();
-                    self.monthly_usage = self.database.get_monthly_usage().await.unwrap_or_default();
-                    self.history = self.database.get_recent_sessions(30).await.unwrap_or_default();
-
-                    // Update current_history based on current view mode
-                    if let AppState::Dashboard { ref view_mode } = self.state {
-                        self.current_history = match view_mode {
-                            ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
-                            ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
-                            ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
-                            ViewMode::History => self.history.clone(),
-                        };
-                    }
-                }
-            } else {
-                self.logs.push(format!("[{}] Skipped saving short session: {} for {}s", Local::now().format("%H:%M:%S"), session.app_name, session.duration));
+                self.logs.push(format!("[{}] Saved session: {} for {}s", Local::now().format("%H:%M:%S"), session.app_name, session.duration));
             }
         }
         // Start new session
@@ -1194,28 +1549,20 @@ impl App {
         let start_time = Local::now();
         // Determine category from original app name
         let (category_name, _) = Self::categorize_app(&new_app);
-        let session = Session {
-            id: None,
-            app_name: new_app.clone(),
-            window_name: window_name.clone(),
+
+        // Create session with parsed data
+        let session = Self::create_session_with_parsing(
+            new_app.clone(),
+            window_name.clone(),
             start_time,
-            duration: 0,
-            category: Some(category_name.to_string()),
-        };
+            category_name.to_string(),
+        );
+
         self.current_session = Some(session);
         self.current_app = new_app.clone();
         self.current_window = window_name;
         self.logs.push(format!("[{}] Switched to: {}", Local::now().format("%H:%M:%S"), new_app));
         Ok(())
-    }
-
-
-    fn start_set_app_name(&mut self) {
-        self.state = AppState::Input {
-            prompt: "Enter app name to track".to_string(),
-            buffer: String::new(),
-            action: InputAction::SetAppName,
-        };
     }
 
     fn start_app_selection(&mut self) {
@@ -1230,13 +1577,6 @@ impl App {
             buffer: String::new(),
             action: InputAction::RenameApp { old_name },
         };
-    }
-
-    fn update_current_app(&mut self) {
-        if self.manual_app_name.is_none() {
-            self.current_app = self.monitor.get_active_app().unwrap_or("unknown".to_string());
-            self.current_window = self.monitor.get_active_window_name().ok();
-        }
     }
 
     fn view_logs(&mut self) {
@@ -1254,9 +1594,18 @@ impl App {
                 ViewMode::Daily => self.database.get_daily_sessions().await?,
                 ViewMode::Weekly => self.database.get_weekly_sessions().await?,
                 ViewMode::Monthly => self.database.get_monthly_sessions().await?,
-                ViewMode::History => self.database.get_recent_sessions(30).await?,
             };
         }
+        Ok(())
+    }
+
+    async fn load_breakdown_data(&mut self) -> Result<()> {
+        // Load all breakdown data from database
+        self.browser_breakdown = self.database.get_browser_breakdown().await?;
+        self.project_breakdown = self.database.get_project_breakdown().await?;
+        self.file_breakdown = self.database.get_file_breakdown().await?;
+        self.terminal_breakdown = self.database.get_terminal_breakdown().await?;
+        self.category_breakdown = self.database.get_category_breakdown().await?;
         Ok(())
     }
 
@@ -1297,17 +1646,11 @@ impl App {
                                 ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
                                 ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
                                 ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
-                                ViewMode::History => self.history.clone(),
                             };
                         }
                         self.logs.push(format!("[{}] Renamed '{}' to '{}' (preserved category: {})", Local::now().format("%H:%M:%S"), old_name, buffer, original_category));
                     }
                 }
-                self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
-            }
-            InputAction::SetAppName => {
-                self.manual_app_name = Some(buffer.clone());
-                self.current_app = buffer;
                 self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
             }
         }

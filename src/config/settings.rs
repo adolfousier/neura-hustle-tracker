@@ -31,7 +31,6 @@ impl Settings {
         // Now try to get DATABASE_URL (should exist after generation if it was needed)
         let database_url = env::var("DATABASE_URL")
             .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable not set after credential generation"))?;
-        println!("DATABASE_URL: {}", database_url);
 
         Ok(Self { database_url })
     }

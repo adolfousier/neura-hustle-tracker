@@ -100,27 +100,6 @@ impl AppMonitor {
         }
     }
 
-    pub fn get_active_app(&self) -> Result<String> {
-        // Synchronous wrapper - spawn a new runtime for blocking contexts
-        if self.use_wayland {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(self.get_active_app_async())
-            })
-        } else {
-            match get_active_window() {
-                Ok(active_window) => {
-                    log::info!("Detected active app (X11): {}", active_window.app_name);
-                    Ok(self.fix_app_name(active_window.app_name))
-                }
-                Err(_) => {
-                    let error_msg = self.detect_environment_issue();
-                    log::warn!("{}", error_msg);
-                    Err(anyhow::anyhow!(error_msg))
-                }
-            }
-        }
-    }
-
     pub async fn get_active_window_name_async(&self) -> Result<String> {
         if self.use_wayland {
             // Use Wayland D-Bus method
@@ -133,23 +112,6 @@ impl AppMonitor {
             }
         } else {
             // Use X11 method
-            match get_active_window() {
-                Ok(active_window) => Ok(active_window.title),
-                Err(_) => {
-                    log::warn!("Failed to get active window title.");
-                    Ok("Unknown Window".to_string())
-                }
-            }
-        }
-    }
-
-    pub fn get_active_window_name(&self) -> Result<String> {
-        // Synchronous wrapper
-        if self.use_wayland {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(self.get_active_window_name_async())
-            })
-        } else {
             match get_active_window() {
                 Ok(active_window) => Ok(active_window.title),
                 Err(_) => {
@@ -245,19 +207,19 @@ impl AppMonitor {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_get_active_app() {
+    #[tokio::test]
+    async fn test_get_active_app_async() {
         let monitor = AppMonitor::new();
         // Note: This test may fail if no active window is available
-        let app = monitor.get_active_app().unwrap_or_else(|_| "test".to_string());
+        let app = monitor.get_active_app_async().await.unwrap_or_else(|_| "test".to_string());
         assert!(!app.is_empty());
     }
 
-    #[test]
-    fn test_get_active_window_name() {
+    #[tokio::test]
+    async fn test_get_active_window_name_async() {
         let monitor = AppMonitor::new();
         // Note: This test may fail if no active window is available
-        let window_name = monitor.get_active_window_name().unwrap_or_else(|_| "test".to_string());
+        let window_name = monitor.get_active_window_name_async().await.unwrap_or_else(|_| "test".to_string());
         assert!(!window_name.is_empty());
     }
 }

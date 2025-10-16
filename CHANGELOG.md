@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.4 (2025-10-16)
+
+- **Enhanced Session Tracking**: Added comprehensive metadata fields for browser (URL, title, notifications), terminal (user, host, directory, project), editor (file, path, language), multiplexer (tmux), and IDE tracking
+- **Advanced Analytics**: Implemented breakdown views for browser usage, project tracking, file editing, terminal sessions, and categories with dedicated popup accessible via 'b' key
+- **Database Schema Expansion**: Added 20+ new columns to sessions table with JSONB metadata storage and parsing success tracking
+- **New Parser Module**: Introduced intelligent window title parsing for extracting detailed context from applications
+- **UI Refinements**: Replaced History view with scrollable HistoryPopup ('h' key), removed obsolete manual app commands for cleaner interface
+- **Performance Improvements**: Removed synchronous wrappers, updated async patterns, and optimized logging configuration
+- **Code Cleanup**: Eliminated unused database methods, enhanced error handling, and improved test coverage
+
 ## v0.2.3 (2025-10-16)
 
 - **Enhanced History Viewing**: Replaced History view mode with a dedicated scrollable HistoryPopup accessible via 'h' key, supporting ↑/↓/PgUp/PgDn navigation
