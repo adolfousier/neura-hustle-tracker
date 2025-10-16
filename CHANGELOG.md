@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.2.7 (2025-10-16)
+
+- **Fixed Cross-Platform Detection**: Properly detect and log macOS, Windows, and Linux operating systems
+  - Platform detection now logged at startup (macOS/Windows/Linux)
+  - Platform-specific API labels in logs (Cocoa/AppKit for macOS, Win32 for Windows, X11/Wayland for Linux)
+  - Fixed misleading "X11" labels that appeared on macOS and Windows
+  - `is_wayland()` now only runs on Linux systems
+- **Fixed App Name Normalization**: Linux-specific name fixes no longer applied to macOS/Windows
+  - macOS Terminal.app no longer incorrectly renamed to "gnome-terminal"
+  - Wayland dot/underscore splitting (e.g., "org.gnome.Nautilus") only applied on Linux
+  - Linux-specific apps (nautilus, gedit, rhythmbox, etc.) only detected on Linux
+  - Cross-platform apps (Chrome, Firefox, VS Code, Slack, etc.) still work on all platforms
+- **Enhanced Debug Logging**: Comprehensive platform-specific logging for troubleshooting
+  - Shows raw window data: app_name, title, process_path, position
+  - Logs original vs normalized app names to see transformation
+  - Platform-specific debug output with OS-specific details
+  - Error messages now show relevant environment variables per platform
+- **Optional Debug Logging**: Add `DEBUG_LOGS_ENABLED=true` to .env to enable detailed logging
+  - Regular users don't generate app.log files (cleaner experience)
+  - Debug mode writes comprehensive logs to app.log
+  - Debug logs include platform detection, window detection, and app name normalization
+  - Disabled by default to avoid unnecessary file generation
+- **Platform-Specific Error Messages**: Accurate error guidance for each OS
+  - macOS errors show DISPLAY, PATH, HOME environment variables
+  - Windows errors show USERPROFILE, COMPUTERNAME
+  - Linux errors properly handle Wayland vs X11 detection
+  - All error messages point users to enable DEBUG_LOGS_ENABLED for troubleshooting
+
 ## v0.2.6 (2025-10-16)
 
 - **Migration Note for v0.2.5 Database Rename**: Database name was changed from 'time_tracker' to 'hustle-tracker' in v0.2.5
