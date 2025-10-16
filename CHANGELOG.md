@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.3 (2025-10-16)
+
+- **Enhanced History Viewing**: Replaced History view mode with a dedicated scrollable HistoryPopup accessible via 'h' key, supporting ↑/↓/PgUp/PgDn navigation
+- **Simplified Interface**: Removed manual app name setting ('m') and update current app detection ('u') commands for cleaner UX
+- **Improved Session Persistence**: Removed session combining logic - now saves all sessions regardless of duration for complete activity tracking
+- **Async Code Cleanup**: Removed synchronous wrapper methods in AppMonitor, updated tests to use async/await pattern
+- **Better Logging**: Improved logging configuration to reduce zbus verbosity and removed debug DATABASE_URL prints
+- **Code Cleanup**: Removed unused update_session_duration database method and added server.log to .gitignore
+- **Updated Documentation**: Refreshed README with new command shortcuts and interface changes
+
 ## v0.2.2 (2025-10-16)
 
 - **Fixed Midnight Boundary Tracking**: Corrected daily activity tracking to properly reset at 00:00 and include all activity since midnight
