@@ -77,22 +77,22 @@ For users who don't have Rust, Docker, Git, or Make installed, use these one-lin
 ### Linux (Ubuntu/Debian)
 
 ```bash
-sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && make run
+sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle='cd $(pwd) && make run'" >> ~/.bashrc && source ~/.bashrc && make run
 ```
 
 ### macOS
 
 ```bash
-brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && make run
+brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle='cd $(pwd) && make run'" >> ~/.zshrc && source ~/.zshrc && make run
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "# Auto-generated database credentials`nPOSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker" | Out-File .env -Encoding UTF8 }; make run;
+winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "# Auto-generated database credentials`nPOSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker" | Out-File .env -Encoding UTF8 }; if (!(Test-Path $PROFILE)) { New-Item -Path $PROFILE -ItemType File -Force }; Add-Content $PROFILE "function hustle { Set-Location '$(Get-Location)'; make run }"; . $PROFILE; make run;
 ```
 
-**Note**: These commands install all required dependencies, clone the repository, and start the application. Admin/sudo privileges may be required for installations.
+**Note**: These commands install all required dependencies, clone the repository, start the application, and create a global `hustle` command. After installation, you can simply type `hustle` from anywhere to start the app! Admin/sudo privileges may be required for installations.
 
 ## Setup
 

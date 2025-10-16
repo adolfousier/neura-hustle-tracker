@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.2.6 (2025-10-16)
+
+- **Migration Note for v0.2.5 Database Rename**: Database name was changed from 'time_tracker' to 'hustle-tracker' in v0.2.5
+  - **For existing users who want to keep old database name**: Update your `compose.yml` POSTGRES_DB and `.env` DATABASE_URL to use your current database name (e.g., `time_tracker`)
+  - **For existing users who want to rename to hustle-tracker**:
+    1. Stop the database: `docker compose down`
+    2. Start database: `docker compose up -d`
+    3. Connect and rename: `docker exec -it neura-hustle-tracker-postgres-1 psql -U <your_username> -c "ALTER DATABASE time_tracker RENAME TO \"hustle-tracker\";"`
+    4. Update `.env` DATABASE_URL to use `/hustle-tracker` instead of `/time_tracker`
+    5. Restart app with `cargo run` or `make run`
+- **Global Command Alias**: One-liner installers now create a global `hustle` command that works from any directory
+  - Linux: Adds alias to `~/.bashrc` and sources it automatically
+  - macOS: Adds alias to `~/.zshrc` and sources it automatically
+  - Windows: Adds PowerShell function to `$PROFILE` and loads it automatically
+  - After installation, simply type `hustle` from anywhere to start the app
+- **Fixed TUI Corruption Bug**: Logs now write to `app.log` file instead of stderr, preventing log messages from corrupting the terminal UI
+- **Logging Improvements**: Changed default log level from debug to info for cleaner logs, reduced zbus verbosity
+- **Better UX**: `cargo run` now works cleanly without requiring stderr redirection (`2> debug.log`)
+
 ## v0.2.5 (2025-10-16)
 
 - **DB Connection**: Fixed query and db generation for universal builds
