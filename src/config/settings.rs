@@ -43,7 +43,7 @@ impl Settings {
 
     fn generate_and_save_credentials() -> Result<()> {
         let (username, password) = Self::generate_credentials();
-        let database_url = format!("postgres://{}:{}@localhost:5432/time_tracker", username, password);
+        let database_url = format!("postgres://{}:{}@localhost:5432/hustle-tracker", username, password);
 
         let env_content = format!(
             "# Auto-generated database credentials\n\

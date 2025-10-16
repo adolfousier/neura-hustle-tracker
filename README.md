@@ -5,6 +5,7 @@ A cross-platform time-tracking tool for monitoring your productivity through app
 ![Demo](src/screenshots/demo.png)
 
 ## Features
+
 - **Interactive Dashboard**: Comprehensive data visualization with bar charts, timelines, and statistics
 - **App Categorization**: Automatic categorization of apps (Development, Browsing, Communication, Media, Files, Email, Office, Other) with color coding
 - **Fully Responsive Design**: Adaptive layout that adjusts to terminal size for optimal viewing on any device
@@ -61,6 +62,7 @@ A cross-platform time-tracking tool for monitoring your productivity through app
 | [WakaTime]    | :x:                | :white_check_mark: | :white_check_mark: | :white_check_mark: | Only for text editors | :x:                         |
 
 ## Prerequisites
+
 - Rust 1.90+
 - Docker and Docker Compose (for easy Postgres setup)
 - **Platform-specific requirements**:
@@ -73,18 +75,21 @@ A cross-platform time-tracking tool for monitoring your productivity through app
 For users who don't have Rust, Docker, Git, or Make installed, use these one-liner commands to install everything and run the app automatically:
 
 ### Linux (Ubuntu/Debian)
+
 ```bash
-sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/time_tracker" > .env && make run
+sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && make run
 ```
 
 ### macOS
+
 ```bash
-brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/time_tracker" > .env && make run
+brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && make run
 ```
 
 ### Windows (PowerShell)
+
 ```powershell
-winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "# Auto-generated database credentials`nPOSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/time_tracker" | Out-File .env -Encoding UTF8 }; make run;
+winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "# Auto-generated database credentials`nPOSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker" | Out-File .env -Encoding UTF8 }; make run;
 ```
 
 **Note**: These commands install all required dependencies, clone the repository, and start the application. Admin/sudo privileges may be required for installations.
@@ -109,6 +114,7 @@ make run
 **⚠️ Important**: You **must** be inside the project directory (`cd neura-hustle-tracker`) before running `make run`.
 
 **What `make run` does:**
+
 - ✅ Starts PostgreSQL in Docker
 - ✅ Builds optimized release binary
 - ✅ Auto-generates secure database credentials
@@ -117,6 +123,7 @@ make run
 - ✅ Starts tracking!
 
 **Other useful Make commands:**
+
 - `make dev` - Quick start with debug build (faster for development)
 - `make help` - See all available commands
 - `make clean` - Clean everything (build artifacts + database)
@@ -148,6 +155,7 @@ docker compose up -d && cargo build --release && .\target\release\neura_hustle_t
 ### Platform-Specific Notes
 
 #### Windows
+
 - Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - Use PowerShell or CMD
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
@@ -155,12 +163,14 @@ docker compose up -d && cargo build --release && .\target\release\neura_hustle_t
 - **Note**: Windows API is used for app detection - usually no special permissions needed
 
 #### macOS
+
 - Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
 - Run: `make run` OR `docker compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
 - **Note**: Grant Screen Recording permission to Terminal in System Preferences > Security & Privacy > Privacy > Screen Recording
 
 #### Linux
+
 - Install Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Install Docker and Docker Compose from your package manager
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
@@ -175,17 +185,19 @@ By default, credentials are auto-generated. To use custom credentials:
 
 1. Copy `.env.example` to `.env`
 2. Edit `.env` with your values:
+
    ```
    POSTGRES_USERNAME=your_username
    POSTGRES_PASSWORD=your_password
-   DATABASE_URL=postgres://your_username:your_password@localhost:5432/time_tracker
+   DATABASE_URL=postgres://your_username:your_password@localhost:5432/hustle-tracker
    ```
+
 3. Run: `make run` or `docker compose up -d && cargo run`
 
 ### Advanced: Local PostgreSQL (No Docker)
 
 1. Install and start PostgreSQL locally
-2. Create database: `CREATE DATABASE time_tracker;`
+2. Create database: `CREATE DATABASE hustle-tracker;`
 3. Create `.env` file with your credentials (see above)
 4. Navigate to project: `cd neura-hustle-tracker`
 5. Run: `cargo build --release && ./target/release/neura_hustle_tracker`
@@ -197,29 +209,37 @@ To run Neura Hustle Tracker automatically on system startup:
 **Note**: The startup scripts include a 30-second delay to allow system services (like Docker) to fully initialize before launching the application.
 
 ### Ubuntu/Linux (GNOME)
+
 ```bash
 mkdir -p ~/.config/autostart/ && cp src/scripts/startup/neura-tracker.desktop ~/.config/autostart/
 ```
+
 Then edit `~/.config/autostart/neura-tracker.desktop` and replace `/path/to/neura-hustle-tracker` with your actual project directory path (e.g., `/home/user/neura-hustle-tracker`).
 
 Log out and back in to start automatically.
 
 ### macOS
+
 ```bash
 mkdir -p ~/Library/LaunchAgents/ && cp src/scripts/startup/neura-tracker.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/neura-tracker.plist
 ```
+
 Log out and back in to start automatically.
 
 ### Windows
+
 ```cmd
 copy src\scripts\startup\neura-tracker.bat "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\"
 ```
+
 Or use Task Scheduler to run the batch file at logon.
 
 ## Usage
+
 The app provides a terminal-based interface for time tracking with an interactive dashboard.
 
 ### Commands
+
 - **Tab**: Switch between dashboard views (Daily/Weekly/Monthly)
 - **h**: View full session history (scrollable popup with ↑/↓/PgUp/PgDn)
 - **Shift+C**: Open commands popup menu with all available shortcuts
@@ -232,7 +252,9 @@ The app provides a terminal-based interface for time tracking with an interactiv
 Sessions automatically track the active application and duration with real-time updates every 5 seconds. The current active session shows live duration with a [LIVE] indicator. Data is saved to Postgres every hour automatically, or when switching applications. Sessions shorter than 10 seconds are combined with consecutive sessions of the same app.
 
 ## Architecture
+
 The application is organized into modular services:
+
 - `database/`: PostgreSQL connection and queries
 - `tracker/`: Cross-platform application monitoring using active-win-pos-rs
 - `ui/`: Ratatui-based terminal interface (works on Windows, macOS, Linux)
@@ -241,15 +263,19 @@ The application is organized into modular services:
 - `utils/`: Helper utilities
 
 ## Supported Platforms
+
 - **Linux**: X11 and Wayland support
 - **macOS**: Full support with Accessibility API
 - **Windows**: Full support with Windows API
 
 ## Testing
+
 Run `cargo test` to execute unit tests for database operations and core functionality.
 
 ## Contributing
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 
 ## License
+
 This project is licensed under the [LICENSE](LICENSE) file.

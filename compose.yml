@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_DB: time_tracker
+      POSTGRES_DB: hustle-tracker
       POSTGRES_USER: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
@@ -10,7 +10,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d time_tracker"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d hustle-tracker"]
       interval: 10s
       timeout: 5s
       retries: 5
