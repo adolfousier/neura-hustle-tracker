@@ -8,6 +8,7 @@ PLAN.md
 install-extension.sh
 commands.md
 server.log
+debug.log
 
 client/target
 client/node_modules

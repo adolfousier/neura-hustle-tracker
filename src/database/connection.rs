@@ -227,30 +227,30 @@ impl Database {
     }
 
     pub async fn get_daily_usage(&self) -> Result<Vec<(String, i64)>> {
-        let rows = sqlx::query!(
+        let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
             "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day' GROUP BY app_name ORDER BY total_duration DESC"
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.into_iter().map(|r| (r.app_name, r.total_duration.unwrap_or(0))).collect())
+        Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
     }
 
     pub async fn get_weekly_usage(&self) -> Result<Vec<(String, i64)>> {
-        let rows = sqlx::query!(
+        let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
             "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '6 days' GROUP BY app_name ORDER BY total_duration DESC"
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.into_iter().map(|r| (r.app_name, r.total_duration.unwrap_or(0))).collect())
+        Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
     }
 
     pub async fn get_monthly_usage(&self) -> Result<Vec<(String, i64)>> {
-        let rows = sqlx::query!(
+        let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
             "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '29 days' GROUP BY app_name ORDER BY total_duration DESC"
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.into_iter().map(|r| (r.app_name, r.total_duration.unwrap_or(0))).collect())
+        Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
     }
 
     pub async fn get_daily_sessions(&self) -> Result<Vec<Session>> {
@@ -310,103 +310,6 @@ impl Database {
             FROM sessions
             WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '29 days'
             ORDER BY start_time DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows)
-    }
-
-    // Breakdown queries for detailed analytics
-
-    pub async fn get_browser_breakdown(&self) -> Result<Vec<(String, i64)>> {
-        let rows: Vec<(String, i64)> = sqlx::query_as(
-            r#"
-            SELECT
-                COALESCE(browser_url, 'Unknown') as service,
-                SUM(duration)::BIGINT as total_duration
-            FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP)
-            AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day'
-            AND browser_url IS NOT NULL
-            GROUP BY browser_url
-            ORDER BY total_duration DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows)
-    }
-
-    pub async fn get_project_breakdown(&self) -> Result<Vec<(String, i64)>> {
-        let rows: Vec<(String, i64)> = sqlx::query_as(
-            r#"
-            SELECT
-                COALESCE(terminal_project_name, editor_project_path, 'Unknown') as project,
-                SUM(duration)::BIGINT as total_duration
-            FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP)
-            AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day'
-            AND (terminal_project_name IS NOT NULL OR editor_project_path IS NOT NULL)
-            GROUP BY COALESCE(terminal_project_name, editor_project_path, 'Unknown')
-            ORDER BY total_duration DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows)
-    }
-
-    pub async fn get_file_breakdown(&self) -> Result<Vec<(String, String, i64)>> {
-        let rows: Vec<(String, String, i64)> = sqlx::query_as(
-            r#"
-            SELECT
-                editor_filename as filename,
-                COALESCE(editor_language, 'Unknown') as language,
-                SUM(duration)::BIGINT as total_duration
-            FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP)
-            AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day'
-            AND editor_filename IS NOT NULL
-            GROUP BY editor_filename, editor_language
-            ORDER BY total_duration DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows)
-    }
-
-    pub async fn get_terminal_breakdown(&self) -> Result<Vec<(String, i64)>> {
-        let rows: Vec<(String, i64)> = sqlx::query_as(
-            r#"
-            SELECT
-                COALESCE(terminal_username || '@' || terminal_hostname, 'Unknown') as terminal_session,
-                SUM(duration)::BIGINT as total_duration
-            FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP)
-            AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day'
-            AND terminal_username IS NOT NULL
-            GROUP BY terminal_username, terminal_hostname
-            ORDER BY total_duration DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows)
-    }
-
-    pub async fn get_category_breakdown(&self) -> Result<Vec<(String, i64)>> {
-        let rows: Vec<(String, i64)> = sqlx::query_as(
-            r#"
-            SELECT
-                COALESCE(category, 'Unknown') as category,
-                SUM(duration)::BIGINT as total_duration
-            FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP)
-            AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day'
-            GROUP BY category
-            ORDER BY total_duration DESC
             "#,
         )
         .fetch_all(&self.pool)

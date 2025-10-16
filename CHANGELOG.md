@@ -3,12 +3,30 @@
 ## v0.2.4 (2025-10-16)
 
 - **Enhanced Session Tracking**: Added comprehensive metadata fields for browser (URL, title, notifications), terminal (user, host, directory, project), editor (file, path, language), multiplexer (tmux), and IDE tracking
-- **Advanced Analytics**: Implemented breakdown views for browser usage, project tracking, file editing, terminal sessions, and categories with dedicated popup accessible via 'b' key
+- **Advanced Analytics Dashboard**: Implemented breakdown views for browser usage, project tracking, file editing, terminal sessions, and categories with dedicated popup accessible via 'b' key
+  - Beautiful grid layout (2x3) showing all breakdown categories at once
+  - View-mode aware: breakdown data automatically matches Daily/Weekly/Monthly view selection
+  - In-memory aggregation from filtered session history for optimal performance
+- **Full History Views**: History popup ('h' key) now shows complete session history for Daily/Weekly/Monthly view modes, not just the current day
 - **Database Schema Expansion**: Added 20+ new columns to sessions table with JSONB metadata storage and parsing success tracking
 - **New Parser Module**: Introduced intelligent window title parsing for extracting detailed context from applications
-- **UI Refinements**: Replaced History view with scrollable HistoryPopup ('h' key), removed obsolete manual app commands for cleaner interface
-- **Performance Improvements**: Removed synchronous wrappers, updated async patterns, and optimized logging configuration
-- **Code Cleanup**: Eliminated unused database methods, enhanced error handling, and improved test coverage
+  - Detects 20+ web services (Gmail, GitHub, Slack, YouTube, etc.) from browser titles
+  - Extracts terminal session info (user@host:/path, project detection)
+  - Parses editor context (filename, language, project path)
+  - Identifies tmux/screen multiplexers
+- **UI Refinements**:
+  - Replaced History view mode with scrollable HistoryPopup ('h' key)
+  - Removed obsolete manual app commands ('m', 'u') for cleaner interface
+  - Fixed CommandsPopup preserving view mode (was hardcoded to Daily)
+  - Cleaned app names by removing "gnome-" prefix for better readability
+- **Performance Improvements**:
+  - Removed synchronous wrappers, fully async API
+  - Optimized logging configuration to reduce zbus verbosity
+  - In-memory breakdown aggregation instead of multiple database queries
+- **Code Cleanup**:
+  - Removed unused database breakdown methods (replaced by in-memory aggregation)
+  - Enhanced error handling and improved test coverage
+  - Updated all tests to use async/await patterns
 
 ## v0.2.3 (2025-10-16)
 
@@ -31,7 +49,7 @@
 ## v0.2.1 (2025-10-15)
 
 - **Fixed startup scrip .env Loading**: Corrected credential loading to use project root directory, preventing generation from startup scripts or different working directories
-- **Data Recovery**: Restored lost database data by switching to correct Docker volume (timetracking_postgres_data)
+- **Data Recovery**: Restored lost database data by switching to correct Docker volume (neura-hustle_tracker_postgres_data)
 - **Cross-Platform Startup**: Ensured startup scripts work consistently across Windows, macOS, and Linux by loading .env from cwd
 - **No Overwrite Policy**: Implemented protection against overwriting existing .env files; only generates if missing
 - **README Updates**: Added CONTRIBUTING.md, updated contributing section, added license section
@@ -45,7 +63,7 @@
 - Improved error handling for D-Bus connection failures with graceful fallback mechanisms
 - Added `uses_wayland()` method to AppMonitor for session type detection
 - **Fixed .env Loading**: Corrected credential loading to use project root directory, preventing generation from startup scripts or different working directories
-- **Data Recovery**: Restored lost database data by switching to correct Docker volume (timetracking_postgres_data)
+- **Data Recovery**: Restored lost database data by switching to correct Docker volume (neura-hustle-tracker_postgres_data)
 - **Cross-Platform Startup**: Ensured startup scripts work consistently across Windows, macOS, and Linux by loading .env from cwd
 - **No Overwrite Policy**: Implemented protection against overwriting existing .env files; only generates if missing
 - **README Updates**: Added CONTRIBUTING.md, updated contributing section, added license section

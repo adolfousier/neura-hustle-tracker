@@ -47,7 +47,7 @@ build:
 # Start PostgreSQL
 db-up:
 	@echo "Starting PostgreSQL..."
-	docker-compose up -d
+	docker compose up -d
 	@echo "Waiting for database to be ready..."
 	@sleep 5
 
@@ -83,14 +83,14 @@ endif
 # Stop PostgreSQL
 db-down:
 	@echo "Stopping PostgreSQL..."
-	docker-compose down
+	docker compose down
 
 # Clean everything
 clean:
 	@echo "Cleaning build artifacts..."
 	cargo clean
 	@echo "Stopping and removing database..."
-	docker-compose down -v
+	docker compose down -v
 	@echo "Clean complete!"
 
 # Setup (alias for db-up for backward compatibility)

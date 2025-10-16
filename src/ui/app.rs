@@ -35,15 +35,6 @@ pub enum InputAction {
     RenameApp { old_name: String },
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum BreakdownView {
-    Category,
-    Browser,
-    Projects,
-    Files,
-    Terminal,
-}
-
 #[derive(Debug, Clone)]
 pub enum AppState {
     Dashboard { view_mode: ViewMode },
@@ -52,7 +43,7 @@ pub enum AppState {
     Input { prompt: String, buffer: String, action: InputAction },
     CommandsPopup,
     HistoryPopup { view_mode: ViewMode, scroll_position: usize },
-    BreakdownPopup { view_mode: ViewMode, view: BreakdownView, scroll_position: usize },
+    BreakdownDashboard { view_mode: ViewMode, scroll_position: usize },
 }
 
 pub struct App {
@@ -285,20 +276,18 @@ impl App {
                                  self.state = AppState::HistoryPopup { view_mode: view_mode.clone(), scroll_position: 0 };
                              }
                              KeyCode::Char('b') => {
-                                 log::debug!("'b' key pressed - opening breakdown popup");
-                                 self.logs.push(format!("[{}] Opening breakdown popup", Local::now().format("%H:%M:%S")));
-                                 if let Err(e) = self.load_breakdown_data().await {
-                                     log::error!("Failed to load breakdown data: {}", e);
-                                     self.logs.push(format!("[{}] Failed to load breakdown data: {}", Local::now().format("%H:%M:%S"), e));
-                                 }
+                                 log::debug!("'b' key pressed - opening breakdown dashboard");
+                                 self.logs.push(format!("[{}] Opening breakdown dashboard", Local::now().format("%H:%M:%S")));
+                                 // Load current_history first (filtered by view mode)
                                  self.current_history = match view_mode {
                                      ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
                                      ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
                                      ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
                                  };
-                                 self.state = AppState::BreakdownPopup {
+                                 // Then aggregate breakdown data from current_history
+                                 self.load_breakdown_data_from_history();
+                                 self.state = AppState::BreakdownDashboard {
                                      view_mode: view_mode.clone(),
-                                     view: BreakdownView::Category,
                                      scroll_position: 0
                                  };
                              }
@@ -306,7 +295,7 @@ impl App {
                          }
                      } else if matches!(self.state, AppState::CommandsPopup) {
                          match key.code {
-                             KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                             KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                              KeyCode::Char('q') => break,
                              KeyCode::Char('r') => self.start_app_selection(),
                              KeyCode::Char('l') => self.view_logs(),
@@ -321,20 +310,18 @@ impl App {
                                  self.state = AppState::HistoryPopup { view_mode: self.current_view_mode.clone(), scroll_position: 0 };
                              }
                              KeyCode::Char('b') => {
-                                 log::debug!("'b' key pressed from CommandsPopup - opening breakdown popup");
-                                 self.logs.push(format!("[{}] Opening breakdown popup from commands menu", Local::now().format("%H:%M:%S")));
-                                 if let Err(e) = self.load_breakdown_data().await {
-                                     log::error!("Failed to load breakdown data: {}", e);
-                                     self.logs.push(format!("[{}] Failed to load breakdown data: {}", Local::now().format("%H:%M:%S"), e));
-                                 }
+                                 log::debug!("'b' key pressed from CommandsPopup - opening breakdown dashboard");
+                                 self.logs.push(format!("[{}] Opening breakdown dashboard from commands menu", Local::now().format("%H:%M:%S")));
+                                 // Load current_history first (filtered by view mode)
                                  self.current_history = match &self.current_view_mode {
                                      ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
                                      ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
                                      ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
                                  };
-                                 self.state = AppState::BreakdownPopup {
+                                 // Then aggregate breakdown data from current_history
+                                 self.load_breakdown_data_from_history();
+                                 self.state = AppState::BreakdownDashboard {
                                      view_mode: self.current_view_mode.clone(),
-                                     view: BreakdownView::Category,
                                      scroll_position: 0
                                  };
                              }
@@ -345,8 +332,8 @@ impl App {
                              AppState::ViewingLogs => {
                                  match key.code {
                                      KeyCode::Char('q') => break,
-                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
-                                     _ => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
+                                     _ => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                                  }
                              }
                              AppState::SelectingApp { selected_index } => {
@@ -366,7 +353,7 @@ impl App {
                                              self.start_rename_app(app_name.clone());
                                          }
                                      }
-                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                                      _ => {}
                                  }
                              }
@@ -375,7 +362,7 @@ impl App {
                                      KeyCode::Char(c) => buffer.push(c),
                                      KeyCode::Backspace => { buffer.pop(); }
                                      KeyCode::Enter => self.handle_input().await?,
-                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: ViewMode::Daily },
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                                      _ => {}
                                  }
                              }
@@ -404,33 +391,21 @@ impl App {
                                      _ => {}
                                  }
                              }
-                             AppState::BreakdownPopup { view_mode, view, scroll_position } => {
+                             AppState::BreakdownDashboard { view_mode, scroll_position } => {
                                  match key.code {
                                      KeyCode::Esc => self.state = AppState::Dashboard { view_mode: view_mode.clone() },
                                      KeyCode::Char('q') => break,
-                                     KeyCode::Tab => {
-                                         *view = match view {
-                                             BreakdownView::Category => BreakdownView::Browser,
-                                             BreakdownView::Browser => BreakdownView::Projects,
-                                             BreakdownView::Projects => BreakdownView::Files,
-                                             BreakdownView::Files => BreakdownView::Terminal,
-                                             BreakdownView::Terminal => BreakdownView::Category,
-                                         };
-                                         *scroll_position = 0;
-                                     }
                                      KeyCode::Up => {
-                                         if *scroll_position > 0 {
-                                             *scroll_position -= 1;
-                                         }
+                                         *scroll_position = scroll_position.saturating_sub(1);
                                      }
                                      KeyCode::Down => {
-                                         *scroll_position += 1;
+                                         *scroll_position = scroll_position.saturating_add(1);
                                      }
                                      KeyCode::PageUp => {
-                                         *scroll_position = scroll_position.saturating_sub(10);
+                                         *scroll_position = scroll_position.saturating_sub(5);
                                      }
                                      KeyCode::PageDown => {
-                                         *scroll_position += 10;
+                                         *scroll_position = scroll_position.saturating_add(5);
                                      }
                                      _ => {}
                                  }
@@ -534,16 +509,7 @@ impl App {
             }
             AppState::CommandsPopup => "Commands Menu - Press key to execute or Esc to close".to_string(),
             AppState::HistoryPopup { .. } => "Session History - Use ↑/↓/PgUp/PgDn to scroll, Esc to close".to_string(),
-            AppState::BreakdownPopup { view, .. } => {
-                let view_name = match view {
-                    BreakdownView::Category => "Category",
-                    BreakdownView::Browser => "Browser",
-                    BreakdownView::Projects => "Projects",
-                    BreakdownView::Files => "Files",
-                    BreakdownView::Terminal => "Terminal",
-                };
-                format!("📊 Breakdown: {} - [Tab] Switch View | [↑/↓] Scroll | [Esc] Close", view_name)
-            }
+            AppState::BreakdownDashboard { .. } => "📊 Activity Breakdown Dashboard - [↑/↓/PgUp/PgDn] Scroll | [Esc] Close".to_string(),
         };
 
         let status_widget = Paragraph::new(status)
@@ -584,7 +550,8 @@ impl App {
                             format!("{}m", minutes)
                         };
 
-                        let display = format!("{}{:<30} {}", prefix, app, time_display);
+                        let clean_app = Self::clean_app_name(app);
+                        let display = format!("{}{:<30} {}", prefix, clean_app, time_display);
 
                         let style = if i == *selected_index {
                             Style::default().fg(Color::Yellow)
@@ -644,7 +611,7 @@ impl App {
 
             AppState::CommandsPopup => {
                 // Show dashboard in background
-                self.draw_dashboard(f, chunks[1], &ViewMode::Daily);
+                self.draw_dashboard(f, chunks[1], &self.current_view_mode);
 
                 // Draw popup overlay
                 let popup_area = Self::centered_rect(60, 50, size);
@@ -693,10 +660,11 @@ impl App {
                     let time = session.start_time.format("%Y-%m-%d %H:%M");
 
                     // Create display name with window name if available
+                    let clean_app = Self::clean_app_name(&session.app_name);
                     let display_name = if let Some(window_name) = &session.window_name {
-                        format!("{} ({})", session.app_name, window_name)
+                        format!("{} ({})", clean_app, window_name)
                     } else {
-                        session.app_name.clone()
+                        clean_app
                     };
 
                     let display = format!("{}  {} - {}m", time, display_name, minutes);
@@ -724,176 +692,58 @@ impl App {
                 f.render_widget(history_list, popup_area);
             }
 
-            AppState::BreakdownPopup { view_mode, view, scroll_position } => {
+            AppState::BreakdownDashboard { view_mode, scroll_position } => {
                 // Show dashboard in background
                 self.draw_dashboard(f, chunks[1], view_mode);
 
-                // Draw popup overlay
-                let popup_area = Self::centered_rect(80, 70, size);
+                // Draw popup overlay (90% width, 85% height)
+                let popup_area = Self::centered_rect(90, 85, size);
                 f.render_widget(ratatui::widgets::Clear, popup_area);
 
-                // Calculate how many items can fit in the popup
-                let max_visible_items = (popup_area.height.saturating_sub(4) as usize).max(10);
+                // Main popup container
+                let popup_block = Block::default()
+                    .borders(Borders::ALL)
+                    .title("📊 Activity Breakdown Dashboard")
+                    .style(Style::default().bg(Color::Black));
+                f.render_widget(popup_block, popup_area);
 
-                let mut breakdown_items: Vec<ListItem> = Vec::new();
+                // Inner area for grid layout
+                let inner_area = popup_area.inner(ratatui::layout::Margin { horizontal: 1, vertical: 1 });
 
-                // Use database breakdown for Daily, aggregate from sessions for Weekly/Monthly
-                match view {
-                    BreakdownView::Category => {
-                        // For Daily: use efficient database query; for Weekly/Monthly: aggregate from sessions
-                        let data = if matches!(view_mode, ViewMode::Daily) {
-                            self.category_breakdown.clone()
-                        } else {
-                            // Aggregate from current_history for weekly/monthly
-                            let mut categories: BTreeMap<String, i64> = BTreeMap::new();
-                            for session in &self.current_history {
-                                if let Some(category) = &session.category {
-                                    *categories.entry(category.clone()).or_insert(0) += session.duration;
-                                }
-                            }
-                            let mut sorted: Vec<(String, i64)> = categories.into_iter().collect();
-                            sorted.sort_by(|a, b| b.1.cmp(&a.1));
-                            sorted
-                        };
+                // Create grid layout: 2 columns x 3 rows
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(34),
+                    ].as_ref())
+                    .split(inner_area);
 
-                        let start_idx = *scroll_position;
-                        let end_idx = (start_idx + max_visible_items).min(data.len());
+                // Row 1: Categories | Browser Services
+                let row1_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(rows[0]);
 
-                        if data.is_empty() {
-                            breakdown_items.push(ListItem::new(Line::from("No category data available")));
-                        } else {
-                            for (category, duration) in &data[start_idx..end_idx] {
-                                let hours = duration / 3600;
-                                let minutes = (duration % 3600) / 60;
-                                let time_str = if hours > 0 {
-                                    format!("{}h {}m", hours, minutes)
-                                } else {
-                                    format!("{}m", minutes)
-                                };
+                // Row 2: Projects | Files
+                let row2_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(rows[1]);
 
-                                let (_, color) = Self::category_from_string(category);
-                                let display = format!("{}  {}", category, time_str);
-                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(color)));
-                            }
-                        }
-                    }
-                    BreakdownView::Browser => {
-                        let start_idx = *scroll_position;
-                        let end_idx = (start_idx + max_visible_items).min(self.browser_breakdown.len());
+                // Row 3: Terminal Sessions (full width)
+                let row3_area = rows[2];
 
-                        if self.browser_breakdown.is_empty() {
-                            breakdown_items.push(ListItem::new(Line::from("No browser data available")));
-                        } else {
-                            for (service, duration) in &self.browser_breakdown[start_idx..end_idx] {
-                                let hours = duration / 3600;
-                                let minutes = (duration % 3600) / 60;
-                                let time_str = if hours > 0 {
-                                    format!("{}h {}m", hours, minutes)
-                                } else {
-                                    format!("{}m", minutes)
-                                };
+                // Render each breakdown section
+                self.draw_breakdown_section(f, row1_cols[0], "📦 Categories", &self.category_breakdown, Color::Magenta, *scroll_position, true);
+                self.draw_breakdown_section(f, row1_cols[1], "🌐 Browser Services", &self.browser_breakdown, Color::Blue, *scroll_position, false);
+                self.draw_breakdown_section(f, row2_cols[0], "📁 Projects", &self.project_breakdown, Color::Yellow, *scroll_position, false);
 
-                                let display = format!("{}  {}", service, time_str);
-                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Blue)));
-                            }
-                        }
-                    }
-                    BreakdownView::Projects => {
-                        let start_idx = *scroll_position;
-                        let end_idx = (start_idx + max_visible_items).min(self.project_breakdown.len());
+                // Files breakdown with language info
+                self.draw_file_breakdown_section(f, row2_cols[1], *scroll_position);
 
-                        if self.project_breakdown.is_empty() {
-                            breakdown_items.push(ListItem::new(Line::from("No project data available")));
-                        } else {
-                            for (project, duration) in &self.project_breakdown[start_idx..end_idx] {
-                                let hours = duration / 3600;
-                                let minutes = (duration % 3600) / 60;
-                                let time_str = if hours > 0 {
-                                    format!("{}h {}m", hours, minutes)
-                                } else {
-                                    format!("{}m", minutes)
-                                };
-
-                                let display = format!("{}  {}", project, time_str);
-                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Yellow)));
-                            }
-                        }
-                    }
-                    BreakdownView::Files => {
-                        let start_idx = *scroll_position;
-                        let end_idx = (start_idx + max_visible_items).min(self.file_breakdown.len());
-
-                        if self.file_breakdown.is_empty() {
-                            breakdown_items.push(ListItem::new(Line::from("No file editing data available")));
-                        } else {
-                            for (filename, language, duration) in &self.file_breakdown[start_idx..end_idx] {
-                                let hours = duration / 3600;
-                                let minutes = (duration % 3600) / 60;
-                                let time_str = if hours > 0 {
-                                    format!("{}h {}m", hours, minutes)
-                                } else {
-                                    format!("{}m", minutes)
-                                };
-
-                                let display = format!("{} ({})  {}", filename, language, time_str);
-                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Cyan)));
-                            }
-                        }
-                    }
-                    BreakdownView::Terminal => {
-                        let start_idx = *scroll_position;
-                        let end_idx = (start_idx + max_visible_items).min(self.terminal_breakdown.len());
-
-                        if self.terminal_breakdown.is_empty() {
-                            breakdown_items.push(ListItem::new(Line::from("No terminal session data available")));
-                        } else {
-                            for (terminal_session, duration) in &self.terminal_breakdown[start_idx..end_idx] {
-                                let hours = duration / 3600;
-                                let minutes = (duration % 3600) / 60;
-                                let time_str = if hours > 0 {
-                                    format!("{}h {}m", hours, minutes)
-                                } else {
-                                    format!("{}m", minutes)
-                                };
-
-                                let display = format!("{}  {}", terminal_session, time_str);
-                                breakdown_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Green)));
-                            }
-                        }
-                    }
-                }
-
-                // Add scroll indicator
-                let total_items = match view {
-                    BreakdownView::Category => self.category_breakdown.len(),
-                    BreakdownView::Browser => self.browser_breakdown.len(),
-                    BreakdownView::Projects => self.project_breakdown.len(),
-                    BreakdownView::Files => self.file_breakdown.len(),
-                    BreakdownView::Terminal => self.terminal_breakdown.len(),
-                };
-
-                let view_name = match view {
-                    BreakdownView::Category => "Category Breakdown",
-                    BreakdownView::Browser => "Browser/Service Breakdown",
-                    BreakdownView::Projects => "Project Breakdown",
-                    BreakdownView::Files => "Files Breakdown",
-                    BreakdownView::Terminal => "Terminal Sessions Breakdown",
-                };
-
-                let scroll_indicator = if total_items > max_visible_items {
-                    let start_idx = *scroll_position;
-                    let end_idx = (start_idx + max_visible_items).min(total_items);
-                    format!(" (Showing {}-{} of {})", start_idx + 1, end_idx, total_items)
-                } else {
-                    format!(" ({} items)", total_items)
-                };
-
-                let breakdown_list = List::new(breakdown_items)
-                    .block(Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!("📊 {}{}", view_name, scroll_indicator))
-                        .style(Style::default().bg(Color::Black)));
-                f.render_widget(breakdown_list, popup_area);
+                self.draw_breakdown_section(f, row3_area, "💻 Terminal Sessions", &self.terminal_breakdown, Color::Green, *scroll_position, false);
             }
         }
     }
@@ -1043,9 +893,10 @@ impl App {
                         format!("{}h{}m", hours, mins)
                     };
 
+                    let clean_app = Self::clean_app_name(app);
                     Bar::default()
                         .value(*value_minutes)
-                        .label(Line::from(format!("{}", app)))
+                        .label(Line::from(clean_app))
                         .text_value(value_label)
                         .style(Style::default().fg(color))
                         .value_style(Style::default().fg(Color::White))
@@ -1080,15 +931,16 @@ impl App {
                 let hours = duration / 3600;
                 let minutes = (duration % 3600) / 60;
 
-                // Truncate app name if terminal is narrow
+                // Clean and truncate app name if terminal is narrow
+                let clean_app = Self::clean_app_name(app);
                 let app_display = if area.width < 40 {
-                    if app.len() > 15 {
-                        format!("{}...", &app[..12])
+                    if clean_app.len() > 15 {
+                        format!("{}...", &clean_app[..12])
                     } else {
-                        app.clone()
+                        clean_app
                     }
                 } else {
-                    app.clone()
+                    clean_app
                 };
 
                 let display = if hours > 0 {
@@ -1130,13 +982,14 @@ impl App {
             let time = current_session.start_time.format("%H:%M");
 
             // Create display name with window name if available
+            let clean_app = Self::clean_app_name(&current_session.app_name);
             let display_name = if let Some(window_name) = &current_session.window_name {
                 if area.width < 40 {
                     // Truncate both app and window names for narrow terminals
-                    let app_short = if current_session.app_name.len() > 8 {
-                        format!("{}...", &current_session.app_name[..5])
+                    let app_short = if clean_app.len() > 8 {
+                        format!("{}...", &clean_app[..5])
                     } else {
-                        current_session.app_name.clone()
+                        clean_app.clone()
                     };
                     let window_short = if window_name.len() > 8 {
                         format!("{}...", &window_name[..5])
@@ -1145,18 +998,18 @@ impl App {
                     };
                     format!("{} ({})", app_short, window_short)
                 } else {
-                    format!("{} ({})", current_session.app_name, window_name)
+                    format!("{} ({})", clean_app, window_name)
                 }
             } else {
                 // Fallback to just app name if no window name
                 if area.width < 40 {
-                    if current_session.app_name.len() > 12 {
-                        format!("{}...", &current_session.app_name[..9])
+                    if clean_app.len() > 12 {
+                        format!("{}...", &clean_app[..9])
                     } else {
-                        current_session.app_name.clone()
+                        clean_app
                     }
                 } else {
-                    current_session.app_name.clone()
+                    clean_app
                 }
             };
 
@@ -1175,13 +1028,14 @@ impl App {
                     let time = session.start_time.format("%H:%M");
 
                     // Create display name with window name if available
+                    let clean_app = Self::clean_app_name(&session.app_name);
                     let display_name = if let Some(window_name) = &session.window_name {
                         if area.width < 40 {
                             // Truncate both app and window names for narrow terminals
-                            let app_short = if session.app_name.len() > 8 {
-                                format!("{}...", &session.app_name[..5])
+                            let app_short = if clean_app.len() > 8 {
+                                format!("{}...", &clean_app[..5])
                             } else {
-                                session.app_name.clone()
+                                clean_app.clone()
                             };
                             let window_short = if window_name.len() > 8 {
                                 format!("{}...", &window_name[..5])
@@ -1190,18 +1044,18 @@ impl App {
                             };
                             format!("{} ({})", app_short, window_short)
                         } else {
-                            format!("{} ({})", session.app_name, window_name)
+                            format!("{} ({})", clean_app, window_name)
                         }
                     } else {
                         // Fallback to just app name if no window name
                         if area.width < 40 {
-                            if session.app_name.len() > 12 {
-                                format!("{}...", &session.app_name[..9])
+                            if clean_app.len() > 12 {
+                                format!("{}...", &clean_app[..9])
                             } else {
-                                session.app_name.clone()
+                                clean_app
                             }
                         } else {
-                            session.app_name.clone()
+                            clean_app
                         }
                     };
 
@@ -1432,6 +1286,81 @@ impl App {
         f.render_widget(afk_paragraph, area);
     }
 
+    // Helper for rendering breakdown sections
+    fn draw_breakdown_section(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        title: &str,
+        data: &[(String, i64)],
+        color: Color,
+        _scroll_position: usize,
+        is_category: bool,
+    ) {
+        let max_items = (area.height.saturating_sub(3) as usize).max(3);
+        let mut items: Vec<ListItem> = Vec::new();
+
+        if data.is_empty() {
+            items.push(ListItem::new(Line::from("  No data available")));
+        } else {
+            for (name, duration) in data.iter().take(max_items) {
+                let hours = duration / 3600;
+                let minutes = (duration % 3600) / 60;
+                let time_str = if hours > 0 {
+                    format!("{}h {}m", hours, minutes)
+                } else {
+                    format!("{}m", minutes)
+                };
+
+                // For categories, extract color from category name
+                let item_color = if is_category {
+                    Self::category_from_string(name).1
+                } else {
+                    color
+                };
+
+                let display = format!("  {}  {}", name, time_str);
+                items.push(ListItem::new(Line::from(display)).style(Style::default().fg(item_color)));
+            }
+        }
+
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title(title));
+        f.render_widget(list, area);
+    }
+
+    // Helper for rendering file breakdown section (special case with language)
+    fn draw_file_breakdown_section(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        _scroll_position: usize,
+    ) {
+        let max_items = (area.height.saturating_sub(3) as usize).max(3);
+        let mut items: Vec<ListItem> = Vec::new();
+
+        if self.file_breakdown.is_empty() {
+            items.push(ListItem::new(Line::from("  No file data available")));
+        } else {
+            for (filename, language, duration) in self.file_breakdown.iter().take(max_items) {
+                let hours = duration / 3600;
+                let minutes = (duration % 3600) / 60;
+                let time_str = if hours > 0 {
+                    format!("{}h {}m", hours, minutes)
+                } else {
+                    format!("{}m", minutes)
+                };
+
+                let display = format!("  {} ({})  {}", filename, language, time_str);
+                items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Cyan)));
+            }
+        }
+
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title("📝 Files Edited"));
+        f.render_widget(list, area);
+    }
+
     // Helper function to create a session with parsed data
     fn create_session_with_parsing(app_name: String, window_name: Option<String>, start_time: DateTime<Local>, category: String) -> Session {
         // Parse window name if available
@@ -1599,14 +1528,62 @@ impl App {
         Ok(())
     }
 
-    async fn load_breakdown_data(&mut self) -> Result<()> {
-        // Load all breakdown data from database
-        self.browser_breakdown = self.database.get_browser_breakdown().await?;
-        self.project_breakdown = self.database.get_project_breakdown().await?;
-        self.file_breakdown = self.database.get_file_breakdown().await?;
-        self.terminal_breakdown = self.database.get_terminal_breakdown().await?;
-        self.category_breakdown = self.database.get_category_breakdown().await?;
-        Ok(())
+    fn load_breakdown_data_from_history(&mut self) {
+        // Aggregate breakdown data from current_history (which is already filtered by view mode)
+
+        // Browser breakdown
+        let mut browser_map: BTreeMap<String, i64> = BTreeMap::new();
+        for session in &self.current_history {
+            if let Some(url) = &session.browser_url {
+                // Extract domain from URL
+                let domain = url.split('/').nth(2).unwrap_or(url).to_string();
+                *browser_map.entry(domain).or_insert(0) += session.duration;
+            }
+        }
+        self.browser_breakdown = browser_map.into_iter().collect();
+        self.browser_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Project breakdown
+        let mut project_map: BTreeMap<String, i64> = BTreeMap::new();
+        for session in &self.current_history {
+            if let Some(project) = &session.terminal_project_name {
+                *project_map.entry(project.clone()).or_insert(0) += session.duration;
+            } else if let Some(project) = &session.ide_project_name {
+                *project_map.entry(project.clone()).or_insert(0) += session.duration;
+            }
+        }
+        self.project_breakdown = project_map.into_iter().collect();
+        self.project_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // File breakdown
+        let mut file_map: BTreeMap<(String, String), i64> = BTreeMap::new();
+        for session in &self.current_history {
+            if let (Some(filename), Some(language)) = (&session.editor_filename, &session.editor_language) {
+                *file_map.entry((filename.clone(), language.clone())).or_insert(0) += session.duration;
+            }
+        }
+        self.file_breakdown = file_map.into_iter().map(|((f, l), d)| (f, l, d)).collect();
+        self.file_breakdown.sort_by(|a, b| b.2.cmp(&a.2));
+
+        // Terminal breakdown
+        let mut terminal_map: BTreeMap<String, i64> = BTreeMap::new();
+        for session in &self.current_history {
+            if let Some(dir) = &session.terminal_directory {
+                *terminal_map.entry(dir.clone()).or_insert(0) += session.duration;
+            }
+        }
+        self.terminal_breakdown = terminal_map.into_iter().collect();
+        self.terminal_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Category breakdown
+        let mut category_map: BTreeMap<String, i64> = BTreeMap::new();
+        for session in &self.current_history {
+            if let Some(category) = &session.category {
+                *category_map.entry(category.clone()).or_insert(0) += session.duration;
+            }
+        }
+        self.category_breakdown = category_map.into_iter().collect();
+        self.category_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
     }
 
     async fn handle_input(&mut self) -> Result<()> {
@@ -1651,7 +1628,7 @@ impl App {
                         self.logs.push(format!("[{}] Renamed '{}' to '{}' (preserved category: {})", Local::now().format("%H:%M:%S"), old_name, buffer, original_category));
                     }
                 }
-                self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
+                self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() };
             }
         }
         Ok(())

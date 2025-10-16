@@ -74,17 +74,17 @@ For users who don't have Rust, Docker, Git, or Make installed, use these one-lin
 
 ### Linux (Ubuntu/Debian)
 ```bash
-sudo apt update && sudo apt install -y make docker.io curl git && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && make run
+sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/time_tracker" > .env && make run
 ```
 
 ### macOS
 ```bash
-brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && make run
+brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/time_tracker" > .env && make run
 ```
 
 ### Windows (PowerShell)
 ```powershell
-winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; make run;
+winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "# Auto-generated database credentials`nPOSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/time_tracker" | Out-File .env -Encoding UTF8 }; make run;
 ```
 
 **Note**: These commands install all required dependencies, clone the repository, and start the application. Admin/sudo privileges may be required for installations.
@@ -133,10 +133,10 @@ git clone https://github.com/adolfousier/neura-hustle-tracker
 cd neura-hustle-tracker
 
 # 2. Build and run (optimized release build):
-docker-compose up -d && cargo build --release && ./target/release/neura_hustle_tracker
+docker compose up -d && cargo build --release && ./target/release/neura_hustle_tracker
 
 # For Windows:
-docker-compose up -d && cargo build --release && .\target\release\neura_hustle_tracker.exe
+docker compose up -d && cargo build --release && .\target\release\neura_hustle_tracker.exe
 ```
 
 **⚠️ Important**: You **must** be inside the project directory (`cd neura-hustle-tracker`) to run these commands.
@@ -151,20 +151,20 @@ docker-compose up -d && cargo build --release && .\target\release\neura_hustle_t
 - Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - Use PowerShell or CMD
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
-- Run: `make run` (if you have Make) OR `docker-compose up -d && cargo build --release && .\target\release\neura_hustle_tracker.exe`
+- Run: `make run` (if you have Make) OR `docker compose up -d && cargo build --release && .\target\release\neura_hustle_tracker.exe`
 - **Note**: Windows API is used for app detection - usually no special permissions needed
 
 #### macOS
 - Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
-- Run: `make run` OR `docker-compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
+- Run: `make run` OR `docker compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
 - **Note**: Grant Screen Recording permission to Terminal in System Preferences > Security & Privacy > Privacy > Screen Recording
 
 #### Linux
 - Install Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Install Docker and Docker Compose from your package manager
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
-- Run: `make run` OR `docker-compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
+- Run: `make run` OR `docker compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
 - **Note**: Requires GUI desktop environment (GNOME, KDE, etc.) for app detection. Works with X11 and Wayland.
 
 ---
@@ -180,7 +180,7 @@ By default, credentials are auto-generated. To use custom credentials:
    POSTGRES_PASSWORD=your_password
    DATABASE_URL=postgres://your_username:your_password@localhost:5432/time_tracker
    ```
-3. Run: `make run` or `docker-compose up -d && cargo run`
+3. Run: `make run` or `docker compose up -d && cargo run`
 
 ### Advanced: Local PostgreSQL (No Docker)
 
