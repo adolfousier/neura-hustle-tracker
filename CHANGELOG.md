@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.5 (2025-10-16)
+
+- **Database Rename**: Renamed database from 'time_tracker' to 'hustle-tracker' to match app name
+- **Configuration Updates**: Updated compose.yml, src/config/settings.rs, and .env to use new database name
+- **Docker Volume**: Ensured postgres service uses correct volume for data persistence
+
 ## v0.2.4 (2025-10-16)
 
 - **Enhanced Session Tracking**: Added comprehensive metadata fields for browser (URL, title, notifications), terminal (user, host, directory, project), editor (file, path, language), multiplexer (tmux), and IDE tracking
