@@ -114,7 +114,7 @@ impl Database {
 
     pub async fn get_daily_usage(&self) -> Result<Vec<(String, i64)>> {
         let rows = sqlx::query!(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE DATE(start_time) = CURRENT_DATE GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day' GROUP BY app_name ORDER BY total_duration DESC"
         )
         .fetch_all(&self.pool)
         .await?;
@@ -123,7 +123,7 @@ impl Database {
 
     pub async fn get_weekly_usage(&self) -> Result<Vec<(String, i64)>> {
         let rows = sqlx::query!(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '7 days' GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '6 days' GROUP BY app_name ORDER BY total_duration DESC"
         )
         .fetch_all(&self.pool)
         .await?;
@@ -132,7 +132,7 @@ impl Database {
 
     pub async fn get_monthly_usage(&self) -> Result<Vec<(String, i64)>> {
         let rows = sqlx::query!(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '30 days' GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '29 days' GROUP BY app_name ORDER BY total_duration DESC"
         )
         .fetch_all(&self.pool)
         .await?;
@@ -141,7 +141,7 @@ impl Database {
 
     pub async fn get_daily_sessions(&self) -> Result<Vec<Session>> {
         let rows = sqlx::query_as::<_, Session>(
-            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE DATE(start_time) = CURRENT_DATE ORDER BY start_time DESC",
+            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day' ORDER BY start_time DESC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -150,7 +150,7 @@ impl Database {
 
     pub async fn get_weekly_sessions(&self) -> Result<Vec<Session>> {
         let rows = sqlx::query_as::<_, Session>(
-            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '7 days' ORDER BY start_time DESC",
+            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '6 days' ORDER BY start_time DESC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -159,7 +159,7 @@ impl Database {
 
     pub async fn get_monthly_sessions(&self) -> Result<Vec<Session>> {
         let rows = sqlx::query_as::<_, Session>(
-            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE DATE(start_time) >= CURRENT_DATE - INTERVAL '30 days' ORDER BY start_time DESC",
+            "SELECT id, app_name, window_name, start_time, duration, category FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '29 days' ORDER BY start_time DESC",
         )
         .fetch_all(&self.pool)
         .await?;

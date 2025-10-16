@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.2 (2025-10-16)
+
+- **Fixed Midnight Boundary Tracking**: Corrected daily activity tracking to properly reset at 00:00 and include all activity since midnight
+- Updated all time-based queries to use `date_trunc('day', CURRENT_TIMESTAMP)` for timezone-aware midnight boundary detection
+- Fixed daily, weekly, and monthly usage queries to accurately track sessions from 00:00 onwards
+- Enhanced session retrieval methods to ensure activities logged after midnight (e.g., 02:14 AM) are correctly included in today's data
+- Improved data consistency with proper PostgreSQL timestamp handling across all dashboard views
+
 ## v0.2.1 (2025-10-15)
 
 - **Fixed startup scrip .env Loading**: Corrected credential loading to use project root directory, preventing generation from startup scripts or different working directories
