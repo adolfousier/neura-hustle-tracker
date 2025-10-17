@@ -95,6 +95,45 @@ impl AppMonitor {
         Ok((focused_window.wm_class.clone(), focused_window.title.clone()))
     }
 
+    // Get both app and window info in a single call (more efficient for macOS AppleScript)
+    pub async fn get_active_window_info_async(&self) -> Result<(String, Option<String>)> {
+        if self.use_wayland {
+            match Self::get_active_window_wayland().await {
+                Ok((wm_class, title)) => {
+                    let app_name = self.fix_app_name(wm_class);
+                    return Ok((app_name, Some(title)));
+                }
+                Err(_) => return Err(anyhow::anyhow!("Wayland detection failed")),
+            }
+        }
+
+        // Try active-win-pos-rs first
+        match get_active_window() {
+            Ok(active_window) => {
+                let app_name = self.fix_app_name(active_window.app_name.clone());
+                let window_title = if active_window.title.is_empty() || active_window.title == active_window.app_name {
+                    None
+                } else {
+                    Some(active_window.title)
+                };
+                return Ok((app_name, window_title));
+            }
+            Err(_) => {
+                // On macOS, fallback to AppleScript
+                #[cfg(target_os = "macos")]
+                {
+                    if let Ok((app, title)) = Self::get_active_window_info_macos().await {
+                        let app_name = self.fix_app_name(app);
+                        let window_title = if title.is_empty() { None } else { Some(title) };
+                        return Ok((app_name, window_title));
+                    }
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("Failed to get window info"))
+    }
+
     pub async fn get_active_app_async(&self) -> Result<String> {
         if self.use_wayland {
             // Use Wayland D-Bus method
@@ -151,6 +190,22 @@ impl AppMonitor {
                 }
                 Err(e) => {
                     log::error!("Failed to get active window: {:?}", e);
+
+                    // On macOS, try AppleScript as fallback
+                    #[cfg(target_os = "macos")]
+                    {
+                        log::info!("active-win-pos-rs failed, trying AppleScript fallback...");
+                        match Self::get_active_app_macos().await {
+                            Ok(app_name) => {
+                                log::info!("AppleScript successfully detected app: '{}'", app_name);
+                                return Ok(self.fix_app_name(app_name));
+                            }
+                            Err(applescript_err) => {
+                                log::error!("AppleScript fallback also failed: {}", applescript_err);
+                            }
+                        }
+                    }
+
                     let error_msg = self.detect_environment_issue();
                     log::warn!("{}", error_msg);
                     Err(anyhow::anyhow!(error_msg))
@@ -170,15 +225,274 @@ impl AppMonitor {
                 }
             }
         } else {
-            // Use X11 method
+            // Use platform-specific native APIs
             match get_active_window() {
-                Ok(active_window) => Ok(active_window.title),
+                Ok(active_window) => {
+                    let title = active_window.title.clone();
+                    let app_name = active_window.app_name.clone();
+
+                    // On macOS, if we get a generic title (app name only), try AppleScript fallback
+                    #[cfg(target_os = "macos")]
+                    {
+                        if title == app_name || title.is_empty() || title == "Unknown" {
+                            log::debug!("Generic title detected for '{}', trying AppleScript fallback", app_name);
+                            if let Ok(detailed_title) = Self::get_window_title_macos(&app_name).await {
+                                if !detailed_title.is_empty() && detailed_title != app_name {
+                                    log::info!("AppleScript retrieved title for {}: '{}'", app_name, detailed_title);
+                                    return Ok(detailed_title);
+                                }
+                            }
+                        }
+                    }
+
+                    // On Windows, if we get a generic title, try PowerShell fallback
+                    #[cfg(target_os = "windows")]
+                    {
+                        if title == app_name || title.is_empty() || title == "Unknown" {
+                            log::debug!("Generic title detected for '{}', trying PowerShell fallback", app_name);
+                            if let Ok(detailed_title) = Self::get_window_title_windows(&app_name).await {
+                                if !detailed_title.is_empty() && detailed_title != app_name {
+                                    log::info!("PowerShell retrieved title for {}: '{}'", app_name, detailed_title);
+                                    return Ok(detailed_title);
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(title)
+                }
                 Err(_) => {
                     log::warn!("Failed to get active window title.");
                     Ok("Unknown Window".to_string())
                 }
             }
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn get_active_app_macos() -> Result<String> {
+        use std::process::Command;
+
+        // AppleScript to get the frontmost application name
+        let script = r#"
+            tell application "System Events"
+                set frontApp to first application process whose frontmost is true
+                return name of frontApp
+            end tell
+        "#;
+
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()?;
+
+        if output.status.success() {
+            let app_name = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
+
+            if !app_name.is_empty() {
+                log::debug!("AppleScript returned app: '{}'", app_name);
+                return Ok(app_name);
+            }
+        } else {
+            let error = String::from_utf8_lossy(&output.stderr);
+            log::warn!("AppleScript failed to get app: {}", error);
+        }
+
+        Err(anyhow::anyhow!("Failed to get active app via AppleScript"))
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn get_active_window_info_macos() -> Result<(String, String)> {
+        use std::process::Command;
+
+        // Comprehensive AppleScript that tries app-specific methods for browsers and terminals
+        let script = r#"
+            tell application "System Events"
+                set frontApp to first application process whose frontmost is true
+                set appName to name of frontApp
+            end tell
+
+            -- Try application-specific methods for common apps
+            if appName contains "Firefox" or appName is "firefox" then
+                tell application "Firefox"
+                    try
+                        set windowTitle to name of front window
+                        return appName & "|" & windowTitle
+                    end try
+                end tell
+            else if appName contains "Chrome" or appName contains "Brave" or appName contains "Chromium" then
+                tell application appName
+                    try
+                        set windowTitle to title of active tab of front window
+                        return appName & "|" & windowTitle
+                    end try
+                end tell
+            else if appName contains "Safari" then
+                tell application "Safari"
+                    try
+                        set windowTitle to name of front document
+                        return appName & "|" & windowTitle
+                    end try
+                end tell
+            else if appName contains "Terminal" or appName is "Terminal" then
+                tell application "Terminal"
+                    try
+                        set windowTitle to name of front window
+                        return appName & "|" & windowTitle
+                    end try
+                end tell
+            else if appName contains "iTerm" or appName is "iTerm2" then
+                tell application "iTerm"
+                    try
+                        set windowTitle to name of current session of current window
+                        return appName & "|" & windowTitle
+                    end try
+                end tell
+            else if appName contains "Alacritty" or appName is "Alacritty" or appName is "alacritty" then
+                tell application "System Events"
+                    tell process "Alacritty"
+                        try
+                            set windowTitle to name of front window
+                            return appName & "|" & windowTitle
+                        end try
+                    end tell
+                end tell
+            end if
+
+            -- Fallback: try System Events
+            tell application "System Events"
+                tell process appName
+                    try
+                        set windowTitle to name of front window
+                        return appName & "|" & windowTitle
+                    on error
+                        return appName & "|"
+                    end try
+                end tell
+            end tell
+        "#;
+
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()?;
+
+        if output.status.success() {
+            let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+            if let Some((app, title)) = result.split_once('|') {
+                let app_name = app.trim().to_string();
+                let window_title = title.trim().to_string();
+
+                log::debug!("AppleScript returned: app='{}', title='{}'", app_name, window_title);
+
+                if !app_name.is_empty() {
+                    return Ok((app_name, window_title));
+                }
+            }
+        } else {
+            let error = String::from_utf8_lossy(&output.stderr);
+            log::warn!("AppleScript failed: {}", error);
+        }
+
+        Err(anyhow::anyhow!("Failed to get window info via AppleScript"))
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn get_window_title_macos(app_name: &str) -> Result<String> {
+        use std::process::Command;
+
+        // AppleScript to get the window title of the frontmost window
+        let script = format!(
+            r#"
+            tell application "System Events"
+                set frontApp to first application process whose frontmost is true
+                set appName to name of frontApp
+                if appName is "{}" then
+                    try
+                        set windowTitle to name of front window of frontApp
+                        return windowTitle
+                    on error
+                        return ""
+                    end try
+                else
+                    return ""
+                end if
+            end tell
+            "#,
+            app_name
+        );
+
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()?;
+
+        if output.status.success() {
+            let title = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
+
+            if !title.is_empty() {
+                log::debug!("AppleScript returned: '{}'", title);
+                return Ok(title);
+            }
+        } else {
+            let error = String::from_utf8_lossy(&output.stderr);
+            log::warn!("AppleScript failed: {}", error);
+        }
+
+        Err(anyhow::anyhow!("Failed to get window title via AppleScript"))
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn get_window_title_windows(app_name: &str) -> Result<String> {
+        use std::process::Command;
+
+        // PowerShell script to get the window title of the active window
+        let script = format!(
+            r#"
+            Add-Type @"
+                using System;
+                using System.Runtime.InteropServices;
+                using System.Text;
+                public class Win32 {{
+                    [DllImport("user32.dll")]
+                    public static extern IntPtr GetForegroundWindow();
+                    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+                    public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+                }}
+"@
+            $hwnd = [Win32]::GetForegroundWindow()
+            $title = New-Object System.Text.StringBuilder 256
+            [Win32]::GetWindowText($hwnd, $title, 256) | Out-Null
+            $title.ToString()
+            "#
+        );
+
+        let output = Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(&script)
+            .output()?;
+
+        if output.status.success() {
+            let title = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
+
+            if !title.is_empty() {
+                log::debug!("PowerShell returned: '{}'", title);
+                return Ok(title);
+            }
+        } else {
+            let error = String::from_utf8_lossy(&output.stderr);
+            log::warn!("PowerShell failed: {}", error);
+        }
+
+        Err(anyhow::anyhow!("Failed to get window title via PowerShell"))
     }
 
     fn fix_app_name(&self, app: String) -> String {

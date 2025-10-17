@@ -1078,7 +1078,7 @@ impl App {
            app_lower.contains("rust") || app_lower.contains("cargo") || app_lower.contains("editor") ||
            app_lower.contains("vscode") || app_lower.contains("vscodium") || app_lower.contains("gedit") ||
            app_lower.contains("nano") || app_lower.contains("emacs") || app_lower.contains("atom") ||
-           app_lower.contains("sublime") {
+           app_lower.contains("sublime") || app_lower.contains("console") || app_lower.contains("iterm") {
             ("💻 Development", Color::Yellow)
         } else if app_lower.contains("browser") || app_lower.contains("chrome") || app_lower.contains("firefox") ||
                   app_lower.contains("brave") || app_lower.contains("edge") || app_lower.contains("chromium") {
@@ -1268,6 +1268,23 @@ impl App {
         let idle_minutes = idle_duration / 60;
         let idle_seconds = idle_duration % 60;
 
+        // Calculate average keyboard activity percentage (total tracking time vs idle time)
+        // Use daily usage to calculate total tracking time today
+        let total_tracking_today: i64 = self.daily_usage.iter().map(|(_, d)| d).sum();
+
+        // Estimate active time: total tracking time - (idle time if currently AFK)
+        let active_time = if is_afk && idle_duration > afk_threshold_secs {
+            total_tracking_today.saturating_sub(idle_duration)
+        } else {
+            total_tracking_today
+        };
+
+        let avg_activity_percentage = if total_tracking_today > 0 {
+            ((active_time as f64 / total_tracking_today as f64) * 100.0).min(100.0)
+        } else {
+            100.0 // Default to 100% if no data yet
+        };
+
         let afk_lines = vec![
             Line::from(""),
             Line::from(vec![
@@ -1276,6 +1293,14 @@ impl App {
             ]),
             Line::from(""),
             Line::from(format!("Idle for: {}m {}s", idle_minutes, idle_seconds)),
+            Line::from(""),
+            Line::from(vec![
+                ratatui::text::Span::styled("Avg Activity: ", Style::default()),
+                ratatui::text::Span::styled(
+                    format!("{:.1}%", avg_activity_percentage),
+                    Style::default().fg(Color::Cyan)
+                ),
+            ]),
             Line::from(""),
             Line::from("Detects keyboard/mouse activity"),
             Line::from("AFK if idle > 5 minutes"),

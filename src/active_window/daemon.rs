@@ -54,12 +54,10 @@ impl Daemon {
                 break;
             }
 
-            // Check for app or window change
-            if let Ok(active_app) = self.monitor.get_active_app_async().await {
-                let active_window = self.monitor.get_active_window_name_async().await.ok();
-
+            // Check for app or window change (use combined method for efficiency)
+            if let Ok((active_app, active_window)) = self.monitor.get_active_window_info_async().await {
                 if active_app != self.current_app || active_window != self.current_window {
-                    self.switch_app(active_app.clone()).await?;
+                    self.switch_app(active_app.clone(), active_window.clone()).await?;
                     self.current_app = active_app;
                     self.current_window = active_window;
                 }
@@ -96,19 +94,18 @@ impl Daemon {
     }
 
     async fn start_tracking(&mut self) -> Result<()> {
-        let app_name = match self.monitor.get_active_app_async().await {
-            Ok(detected) => {
-                self.current_app = detected.clone();
-                detected
+        let (app_name, window_name) = match self.monitor.get_active_window_info_async().await {
+            Ok((app, win)) => {
+                self.current_app = app.clone();
+                (app, win)
             }
             Err(e) => {
                 log::error!("Window detection failed: {}", e);
                 self.current_app = "Unknown".to_string();
-                "Unknown".to_string()
+                ("Unknown".to_string(), None)
             }
         };
 
-        let window_name = self.monitor.get_active_window_name_async().await.ok();
         let start_time = Local::now();
         let (category_name, _) = Self::categorize_app(&app_name);
 
@@ -125,7 +122,7 @@ impl Daemon {
         Ok(())
     }
 
-    async fn switch_app(&mut self, new_app: String) -> Result<()> {
+    async fn switch_app(&mut self, new_app: String, window_name: Option<String>) -> Result<()> {
         // End current session
         if let Some(mut session) = self.current_session.take() {
             session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
@@ -138,7 +135,6 @@ impl Daemon {
         }
 
         // Start new session
-        let window_name = self.monitor.get_active_window_name_async().await.ok();
         let start_time = Local::now();
         let (category_name, _) = Self::categorize_app(&new_app);
 
@@ -163,7 +159,7 @@ impl Daemon {
            app_lower.contains("rust") || app_lower.contains("cargo") || app_lower.contains("editor") ||
            app_lower.contains("vscode") || app_lower.contains("vscodium") || app_lower.contains("gedit") ||
            app_lower.contains("nano") || app_lower.contains("emacs") || app_lower.contains("atom") ||
-           app_lower.contains("sublime") {
+           app_lower.contains("sublime") || app_lower.contains("console") || app_lower.contains("iterm") {
             ("💻 Development", ())
         } else if app_lower.contains("browser") || app_lower.contains("chrome") || app_lower.contains("firefox") ||
                   app_lower.contains("brave") || app_lower.contains("edge") || app_lower.contains("chromium") {

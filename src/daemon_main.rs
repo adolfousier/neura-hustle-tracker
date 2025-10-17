@@ -11,6 +11,35 @@ use crate::database::connection::Database;
 use dotenvy::dotenv;
 use std::env;
 use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+
+/// A writer that flushes after every write to ensure logs appear immediately
+struct FlushingWriter {
+    inner: Arc<Mutex<std::fs::File>>,
+}
+
+impl FlushingWriter {
+    fn new(file: std::fs::File) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(file)),
+        }
+    }
+}
+
+impl Write for FlushingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut file = self.inner.lock().unwrap();
+        let result = file.write(buf);
+        file.flush()?; // Flush after every write
+        result
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut file = self.inner.lock().unwrap();
+        file.flush()
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,18 +53,20 @@ async fn main() -> Result<()> {
         .unwrap_or(false);
 
     if debug_enabled {
-        // Enable debug logging to app.log file
+        // Enable debug logging to daemon.log file with immediate flushing
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
             .open("daemon.log")
-            .expect("Failed to open log file");
+            .expect("Failed to open daemon.log file");
+
+        let flushing_writer = FlushingWriter::new(log_file);
 
         env_logger::Builder::from_env(
             env_logger::Env::default()
                 .default_filter_or("neura_hustle_tracker=debug")
         )
-        .target(env_logger::Target::Pipe(Box::new(log_file)))
+        .target(env_logger::Target::Pipe(Box::new(flushing_writer)))
         .init();
 
         log::info!("=== DAEMON DEBUG LOGGING ENABLED ===");
