@@ -10,6 +10,8 @@ commands.md
 server.log
 debug.log
 app.log
+daemon.log
+daemon.pid
 
 client/target
 client/node_modules

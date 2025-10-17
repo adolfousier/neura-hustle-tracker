@@ -1,15 +1,19 @@
-.PHONY: run dev build setup db-up db-down clean help
+.PHONY: run dev build setup db-up db-down clean help daemon-start daemon-stop daemon-status view build-daemon
 
 # Detect OS for cross-platform support
 ifeq ($(OS),Windows_NT)
     BINARY := target/release/neura_hustle_tracker.exe
+    DAEMON_BINARY := target/release/neura_hustle_daemon.exe
     RM := del /Q
     RMDIR := rmdir /S /Q
+    PID_FILE := daemon.pid
 else
     UNAME_S := $(shell uname -s)
     BINARY := target/release/neura_hustle_tracker
+    DAEMON_BINARY := target/release/neura_hustle_daemon
     RM := rm -f
     RMDIR := rm -rf
+    PID_FILE := daemon.pid
 endif
 
 # Default target
@@ -17,15 +21,22 @@ help:
 	@echo "Neura Hustle Tracker - Make Commands"
 	@echo "====================================="
 	@echo ""
-	@echo "Quick Start:"
-	@echo "  make run        - Start DB + build (release) + run app (ONE COMMAND!)"
-	@echo "  make dev        - Start DB + run app in dev mode (faster builds)"
+	@echo "Quick Start (Linux - Unified Mode):"
+	@echo "  make run           - Start DB + build + run app (ONE COMMAND!)"
+	@echo "  make dev           - Start DB + run app in dev mode (faster builds)"
+	@echo ""
+	@echo "macOS/Windows (Daemon Mode - Recommended):"
+	@echo "  make daemon-start  - Start background tracking daemon"
+	@echo "  make daemon-stop   - Stop background tracking daemon"
+	@echo "  make daemon-status - Check if daemon is running"
+	@echo "  make view          - Open TUI to view stats (daemon must be running)"
 	@echo ""
 	@echo "Individual Steps:"
-	@echo "  make db-up      - Start PostgreSQL in Docker"
-	@echo "  make build      - Build release binary only"
-	@echo "  make db-down    - Stop PostgreSQL"
-	@echo "  make clean      - Clean all build artifacts and stop DB"
+	@echo "  make db-up         - Start PostgreSQL in Docker"
+	@echo "  make build         - Build TUI binary only"
+	@echo "  make build-daemon  - Build daemon binary only"
+	@echo "  make db-down       - Stop PostgreSQL"
+	@echo "  make clean         - Clean all build artifacts and stop DB"
 	@echo ""
 	@echo "Note: Credentials are auto-generated on first run!"
 
@@ -39,10 +50,15 @@ dev: check-wayland db-up
 	@echo "Starting in development mode..."
 	cargo run
 
-# Just build release binary
+# Just build TUI release binary
 build:
-	@echo "Building release binary..."
-	cargo build --release
+	@echo "Building TUI release binary..."
+	cargo build --release --bin neura_hustle_tracker
+
+# Just build daemon release binary
+build-daemon:
+	@echo "Building daemon release binary..."
+	cargo build --release --bin neura_hustle_daemon
 
 # Start PostgreSQL
 db-up:
@@ -95,3 +111,50 @@ clean:
 
 # Setup (alias for db-up for backward compatibility)
 setup: db-up
+
+# Daemon control commands
+daemon-start: db-up build-daemon
+	@echo "Starting background daemon..."
+	@if [ -f $(PID_FILE) ]; then \
+		echo "Daemon already running (PID: $$(cat $(PID_FILE)))"; \
+		echo "Run 'make daemon-stop' first to restart"; \
+		exit 1; \
+	fi
+	@nohup $(DAEMON_BINARY) > daemon.log 2>&1 & echo $$! > $(PID_FILE)
+	@echo "Daemon started (PID: $$(cat $(PID_FILE)))"
+	@echo "Logs: daemon.log"
+	@echo "To view stats: make view"
+
+daemon-stop:
+	@if [ ! -f $(PID_FILE) ]; then \
+		echo "Daemon not running (no PID file found)"; \
+		exit 1; \
+	fi
+	@echo "Stopping daemon (PID: $$(cat $(PID_FILE)))..."
+	@kill $$(cat $(PID_FILE)) 2>/dev/null || echo "Process already stopped"
+	@rm -f $(PID_FILE)
+	@echo "Daemon stopped"
+
+daemon-status:
+	@if [ ! -f $(PID_FILE) ]; then \
+		echo "Daemon is NOT running"; \
+		exit 1; \
+	fi
+	@if ps -p $$(cat $(PID_FILE)) > /dev/null 2>&1; then \
+		echo "Daemon is RUNNING (PID: $$(cat $(PID_FILE)))"; \
+		echo "Logs: daemon.log"; \
+	else \
+		echo "Daemon is NOT running (stale PID file)"; \
+		rm -f $(PID_FILE); \
+		exit 1; \
+	fi
+
+view: build
+	@if [ ! -f $(PID_FILE) ]; then \
+		echo "⚠️  Warning: Daemon not running"; \
+		echo "Start daemon first: make daemon-start"; \
+		echo ""; \
+		echo "Opening TUI in viewer mode anyway..."; \
+	fi
+	@echo "Opening TUI..."
+	./$(BINARY)

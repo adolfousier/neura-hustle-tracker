@@ -1,14 +1,13 @@
-mod active_window;
 mod config;
 mod database;
 mod models;
 mod tracker;
-mod ui;
+mod active_window;
 
 use anyhow::Result;
+use crate::active_window::daemon::Daemon;
 use crate::config::settings::Settings;
 use crate::database::connection::Database;
-use crate::ui::app::App;
 use dotenvy::dotenv;
 use std::env;
 use std::fs::OpenOptions;
@@ -29,7 +28,7 @@ async fn main() -> Result<()> {
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open("app.log")
+            .open("daemon.log")
             .expect("Failed to open log file");
 
         env_logger::Builder::from_env(
@@ -39,8 +38,8 @@ async fn main() -> Result<()> {
         .target(env_logger::Target::Pipe(Box::new(log_file)))
         .init();
 
-        log::info!("=== DEBUG LOGGING ENABLED ===");
-        log::info!("Writing logs to app.log");
+        log::info!("=== DAEMON DEBUG LOGGING ENABLED ===");
+        log::info!("Writing logs to daemon.log");
         log::info!("To disable: Remove DEBUG_LOGS_ENABLED from .env or set to false");
     } else {
         // No logging for regular users
@@ -51,16 +50,16 @@ async fn main() -> Result<()> {
         .init();
     }
 
-    log::info!("Starting Neura Hustle Tracker");
-    let settings = Settings::new().unwrap();
+    log::info!("Starting Neura Hustle Tracker Daemon");
+    let settings = Settings::new()?;
     log::info!("Connecting to database...");
-    let database = Database::new(&settings.database_url).await.unwrap();
+    let database = Database::new(&settings.database_url).await?;
     log::info!("Connected successfully. Creating tables...");
-    database.create_table().await.unwrap();
-    log::info!("Tables created. Starting application...");
+    database.create_table().await?;
+    log::info!("Tables created. Starting daemon...");
 
-    let mut app = App::new(database);
-    app.run().await?;
+    let mut daemon = Daemon::new(database);
+    daemon.run().await?;
 
     Ok(())
 }

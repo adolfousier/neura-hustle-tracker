@@ -1,3 +1,10 @@
+[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Ratatui](https://img.shields.io/badge/ratatui-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://ratatui.rs)
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
+[![PostgreSQL](https://img.shields.io/badge/postgresql-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+
+[![Neura Hustle Tracker](https://img.shields.io/badge/Neura%20Hustle%20Tracker-7f56da)](https://meetneura.ai) [![Powered by Neura AI](https://img.shields.io/badge/Powered%20by-Neura%20AI-7f56da)](https://meetneura.ai)
+
 # Neura Hustle Tracker BETA
 
 A cross-platform time-tracking tool for monitoring your productivity through app usage during work sessions. Built with Rust, Ratatui for the UI and Postgres database. Supports Windows, macOS (macOS and Windows not tested yet, please if you try provide feedback), and Linux (X11 and Wayland).
@@ -19,6 +26,28 @@ A cross-platform time-tracking tool for monitoring your productivity through app
 - **Live Session Display**: Current active session shows real-time duration with [LIVE] indicator
 - **Timestamped Logs**: All log entries include timestamps for better debugging
 - **PostgreSQL Storage**: Persistent data storage with automatic migrations
+
+## Which Mode Should I Use?
+
+Neura Hustle Tracker supports two operating modes depending on your platform:
+
+### Linux (X11/Wayland) - Unified Mode ✅
+- **Recommended**: Use unified mode (default)
+- **How it works**: TUI and tracking run in one process
+- **Command**: `make run`
+- **Why**: Linux window detection works perfectly even when TUI is running
+- **Note**: Wayland users need [Window Calls extension](https://extensions.gnome.org/extension/4724/window-calls/)
+
+### macOS/Windows - Daemon Mode 🔄
+- **Recommended**: Use daemon mode for accurate tracking
+- **How it works**:
+  - Background daemon tracks all apps silently
+  - TUI opens separately to view stats (doesn't interfere with tracking)
+- **Commands**:
+  - `make daemon-start` - Start background tracking
+  - `make view` - Open TUI to view stats
+  - `make daemon-stop` - Stop background tracking
+- **Why**: On macOS/Windows, when the TUI runs, it becomes the focused window and can't detect other apps you switch to
 
 ### Feature Comparison
 
@@ -77,22 +106,26 @@ For users who don't have Rust, Docker, Git, or Make installed, use these one-lin
 ### Linux (Ubuntu/Debian)
 
 ```bash
-sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle='cd $(pwd) && make run'" >> ~/.bashrc && source ~/.bashrc && make run
+sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "POSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle='cd $(pwd) && make run'" >> ~/.bashrc && source ~/.bashrc && make run
 ```
 
 ### macOS
 
 ```bash
-brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "# Auto-generated database credentials\nPOSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle='cd $(pwd) && make run'" >> ~/.zshrc && source ~/.zshrc && make run
+brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "POSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle-start='cd $(pwd) && make daemon-start'" >> ~/.zshrc && echo "alias hustle-stop='cd $(pwd) && make daemon-stop'" >> ~/.zshrc && echo "alias hustle-view='cd $(pwd) && make view'" >> ~/.zshrc && echo "alias hustle-status='cd $(pwd) && make daemon-status'" >> ~/.zshrc && source ~/.zshrc && make daemon-start
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "# Auto-generated database credentials`nPOSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker" | Out-File .env -Encoding UTF8 }; if (!(Test-Path $PROFILE)) { New-Item -Path $PROFILE -ItemType File -Force }; Add-Content $PROFILE "function hustle { Set-Location '$(Get-Location)'; make run }"; . $PROFILE; make run;
+winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "POSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker" | Out-File .env -Encoding UTF8 }; if (!(Test-Path $PROFILE)) { New-Item -Path $PROFILE -ItemType File -Force }; Add-Content $PROFILE "function hustle-start { Set-Location '$(Get-Location)'; make daemon-start }"; Add-Content $PROFILE "function hustle-stop { Set-Location '$(Get-Location)'; make daemon-stop }"; Add-Content $PROFILE "function hustle-view { Set-Location '$(Get-Location)'; make view }"; Add-Content $PROFILE "function hustle-status { Set-Location '$(Get-Location)'; make daemon-status }"; . $PROFILE; make daemon-start;
 ```
 
-**Note**: These commands install all required dependencies, clone the repository, start the application, and create a global `hustle` command. After installation, you can simply type `hustle` from anywhere to start the app! Admin/sudo privileges may be required for installations.
+**What this does**: Installs all dependencies, clones repo, starts background tracking, creates global commands.
+
+**After installation, use these commands from anywhere**:
+- **Linux**: `hustle` - Start tracking with TUI
+- **macOS/Windows**: `hustle-start`, `hustle-stop`, `hustle-view`, `hustle-status`
 
 ## Setup
 
@@ -154,28 +187,47 @@ docker compose up -d && cargo build --release && .\target\release\neura_hustle_t
 
 ### Platform-Specific Notes
 
-#### Windows
-
-- Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- Use PowerShell or CMD
-- Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
-- Run: `make run` (if you have Make) OR `docker compose up -d && cargo build --release && .\target\release\neura_hustle_tracker.exe`
-- **Note**: Windows API is used for app detection - usually no special permissions needed
-
-#### macOS
-
-- Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
-- Run: `make run` OR `docker compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
-- **Note**: Grant Screen Recording permission to Terminal in System Preferences > Security & Privacy > Privacy > Screen Recording
-
-#### Linux
+#### Linux (X11/Wayland) - Unified Mode ✅
 
 - Install Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Install Docker and Docker Compose from your package manager
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
-- Run: `make run` OR `docker compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
-- **Note**: Requires GUI desktop environment (GNOME, KDE, etc.) for app detection. Works with X11 and Wayland.
+- **Quick Start**: `make run` (ONE command - starts DB, builds, runs!)
+- **Manual**: `docker compose up -d && cargo build --release && ./target/release/neura_hustle_tracker`
+- **Requirements**: GUI desktop environment (GNOME, KDE, etc.) for app detection
+
+**Wayland Users (GNOME)**: Install the [Window Calls extension](https://extensions.gnome.org/extension/4724/window-calls/) for window tracking on Wayland. This extension provides D-Bus calls to return list of windows, move, resize, and close them.
+
+**Note**: Linux tracking is 100% accurate in unified mode. X11 and Wayland (with extension) work perfectly!
+
+#### macOS - Daemon Mode (Recommended)
+
+- Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
+- **Start tracking**: `make daemon-start` (starts DB + background daemon)
+- **View stats**: `make view` (opens TUI to view stats)
+- **Stop tracking**: `make daemon-stop`
+- **Check status**: `make daemon-status`
+- **Manual daemon start**: `docker compose up -d && cargo build --release --bin neura_hustle_daemon && ./target/release/neura_hustle_daemon &`
+- **Manual TUI**: `cargo build --release --bin neura_hustle_tracker && ./target/release/neura_hustle_tracker`
+- **Permissions**: Grant Screen Recording permission to Terminal in System Preferences > Security & Privacy > Privacy > Screen Recording
+
+**Alternative - Unified Mode**: You can still use `make run` for unified mode, but tracking accuracy may be reduced when TUI is focused.
+
+#### Windows - Daemon Mode (Recommended)
+
+- Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- Use PowerShell or CMD
+- Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
+- **Start tracking**: `make daemon-start` (starts DB + background daemon)
+- **View stats**: `make view` (opens TUI to view stats)
+- **Stop tracking**: `make daemon-stop`
+- **Check status**: `make daemon-status`
+- **Manual daemon start**: `docker compose up -d && cargo build --release --bin neura_hustle_daemon && .\target\release\neura_hustle_daemon.exe`
+- **Manual TUI**: `cargo build --release --bin neura_hustle_tracker && .\target\release\neura_hustle_tracker.exe`
+- **Permissions**: Windows API is used - usually no special permissions needed
+
+**Alternative - Unified Mode**: You can still use `make run` for unified mode, but tracking accuracy may be reduced when TUI is focused.
 
 ---
 
@@ -255,12 +307,32 @@ Sessions automatically track the active application and duration with real-time 
 
 The application is organized into modular services:
 
+- `active_window/`: Background daemon for window tracking (macOS/Windows architecture)
 - `database/`: PostgreSQL connection and queries
 - `tracker/`: Cross-platform application monitoring using active-win-pos-rs
 - `ui/`: Ratatui-based terminal interface (works on Windows, macOS, Linux)
 - `config/`: Configuration management
 - `models/`: Data structures
 - `utils/`: Helper utilities
+
+### Daemon Mode (macOS/Windows)
+
+For macOS and Windows users who need background tracking without the TUI interfering:
+
+```bash
+# Start background daemon
+cargo build --release
+./target/release/neura_hustle_daemon  # macOS/Linux
+# or
+.\target\release\neura_hustle_daemon.exe  # Windows
+
+# In another terminal, view stats with TUI
+./target/release/neura_hustle_tracker  # macOS/Linux
+# or
+.\target\release\neura_hustle_tracker.exe  # Windows
+```
+
+The daemon runs silently in the background tracking active windows, while the TUI can be opened/closed to view stats without affecting tracking.
 
 ## Supported Platforms
 
@@ -279,3 +351,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 ## License
 
 This project is licensed under the [LICENSE](LICENSE) file.
+
+[![Star History Chart](https://api.star-history.com/svg?repos=adolfousier/neura-hustle-tracker&type=Date)](https://star-history.com/#adolfousier/neura-hustle-tracker&Date)

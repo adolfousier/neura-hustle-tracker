@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.2.8 (2025-10-17)
+
+- **Background Daemon Architecture**: Implemented separate daemon mode for macOS/Windows to solve TUI tracking interference issue
+  - Created `neura_hustle_daemon` binary that runs silently in background tracking all apps
+  - Created `neura_hustle_tracker` TUI binary for viewing stats (can open/close without affecting tracking)
+  - Solves fundamental issue: TUI can't track other apps when IT is the focused window
+  - Daemon polls active window every 100ms (same as unified mode for real-time accuracy)
+  - Daemon auto-saves sessions hourly + on app switch + graceful shutdown (SIGTERM/SIGINT)
+- **Platform-Specific Modes**:
+  - **Linux X11**: Unified mode works perfectly - TUI + tracking in one process (no changes, no additional requirements)
+  - **Linux Wayland**: Unified mode works perfectly - **REQUIRES** [Window Calls GNOME extension](https://extensions.gnome.org/extension/4724/window-calls/) for window tracking
+  - **macOS/Windows**: Daemon mode recommended - background tracking + separate TUI viewer
+  - Both modes available on all platforms - user chooses at runtime which binary to run
+- **New Makefile Commands**:
+  - `make daemon-start` - Start background tracking daemon (starts DB, builds daemon, runs in background)
+  - `make daemon-stop` - Stop background tracking daemon
+  - `make daemon-status` - Check if daemon is running (shows PID and log location)
+  - `make view` - Open TUI to view stats (warns if daemon not running)
+  - `make build-daemon` - Build only the daemon binary
+  - Updated `make build` to build only TUI binary (for faster incremental builds)
+  - Updated `make help` with clear Linux vs macOS/Windows command guidance
+- **One-Liner Installation Updates**:
+  - **Linux**: Creates `hustle` alias (unified mode - works perfectly)
+  - **macOS**: Creates `hustle-start`, `hustle-stop`, `hustle-view`, `hustle-status` aliases (daemon mode)
+  - **Windows**: Creates `hustle-start`, `hustle-stop`, `hustle-view`, `hustle-status` functions (daemon mode)
+  - Removed comments from .env generation in one-liners (comments broke execution)
+- **README Enhancements**:
+  - Added "Which Mode Should I Use?" decision guide section
+  - Clear explanation of why Linux uses unified mode (works perfectly) vs macOS/Windows daemon mode (TUI interference)
+  - Updated Platform-Specific Notes with daemon mode instructions for macOS/Windows
+  - Added Wayland extension requirement documentation for Linux users
+  - Clarified that Linux tracking is 100% accurate in unified mode
+  - Updated daemon mode documentation with clear start/stop/view workflow
+- **Code Organization**:
+  - Added `src/active_window/daemon.rs` - Background tracking daemon (268 lines)
+  - Added `src/daemon_main.rs` - Daemon entry point with logging setup
+  - Added `src/active_window/mod.rs` - Module declaration
+  - Updated `Cargo.toml` to build two separate binaries
+  - Added `daemon.log` and `daemon.pid` to .gitignore
+  - Daemon writes to `daemon.log` when DEBUG_LOGS_ENABLED=true (separate from TUI's app.log)
+
 ## v0.2.7 (2025-10-16)
 
 - **Fixed Cross-Platform Detection**: Properly detect and log macOS, Windows, and Linux operating systems
