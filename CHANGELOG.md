@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.3.0 (2025-10-18)
+
+- **Manual Category Management**: New 'c' command allows users to manually assign and create custom categories for apps
+  - Press 'c' to enter category selection mode
+  - Select app to categorize from usage list (shows current category)
+  - Choose from predefined categories or create custom ones
+  - Categories persist across all sessions for that app
+  - Real-time UI updates throughout dashboard, history, and breakdowns
+  - Custom category creation with emoji support (e.g., "🎮 Gaming", "🎨 Design")
+- **Database Enhancements**:
+  - Added `update_app_category()` method for bulk category updates
+  - Category changes apply to all past and future sessions of an app
+- **UI Improvements**:
+  - New `SelectingCategory` state for app selection in category mode
+  - New `CategoryMenu` state for category selection with visual indicators
+  - Updated commands menu to include '[c] Change app category'
+  - Category display shows with color coding in selection view
+  - Status bar messages for category workflow
+- **Code Organization**:
+  - Moved daemon files to `src/utils/` directory structure
+  - Updated module paths for better organization
+  - Prepared groundwork for future command refactoring to `src/ui/commands/`
+
 ## v0.2.8 (2025-10-17)
 
 - **Background Daemon Architecture**: Implemented separate daemon mode for macOS/Windows to solve TUI tracking interference issue
@@ -35,7 +58,7 @@
   - Updated daemon mode documentation with clear start/stop/view workflow
 - **Code Organization**:
   - Added `src/active_window/daemon.rs` - Background tracking daemon (268 lines)
-  - Added `src/daemon_main.rs` - Daemon entry point with logging setup
+  - Added `src/utils/daemon_main.rs` - Daemon entry point with logging setup
   - Added `src/active_window/mod.rs` - Module declaration
   - Updated `Cargo.toml` to build two separate binaries
   - Added `daemon.log` and `daemon.pid` to .gitignore

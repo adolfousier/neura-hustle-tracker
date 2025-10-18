@@ -215,6 +215,15 @@ impl Database {
         Ok(())
     }
 
+    pub async fn update_app_category(&self, app_name: &str, category: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET category = $1 WHERE app_name = $2")
+            .bind(category)
+            .bind(app_name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn fix_old_categories(&self) -> Result<()> {
         // Fix any sessions with old category names that should be Development
         sqlx::query("UPDATE sessions SET category = $1 WHERE category IN ($2, $3)")

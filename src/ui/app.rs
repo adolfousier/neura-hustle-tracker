@@ -33,6 +33,7 @@ pub enum ViewMode {
 #[derive(Debug, Clone)]
 pub enum InputAction {
     RenameApp { old_name: String },
+    CreateCategory { app_name: String },
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,8 @@ pub enum AppState {
     Dashboard { view_mode: ViewMode },
     ViewingLogs,
     SelectingApp { selected_index: usize },
+    SelectingCategory { selected_index: usize },
+    CategoryMenu { app_name: String, selected_index: usize },
     Input { prompt: String, buffer: String, action: InputAction },
     CommandsPopup,
     HistoryPopup { view_mode: ViewMode, scroll_position: usize },
@@ -253,6 +256,7 @@ impl App {
                          match key.code {
                              KeyCode::Char('q') => break,
                              KeyCode::Char('r') => self.start_app_selection(),
+                             KeyCode::Char('c') => self.start_category_selection(),
                              KeyCode::Char('l') => self.view_logs(),
                              KeyCode::Char('C') => self.state = AppState::CommandsPopup,
                              KeyCode::Tab => {
@@ -298,6 +302,7 @@ impl App {
                              KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                              KeyCode::Char('q') => break,
                              KeyCode::Char('r') => self.start_app_selection(),
+                             KeyCode::Char('c') => self.start_category_selection(),
                              KeyCode::Char('l') => self.view_logs(),
                              KeyCode::Char('h') => {
                                  log::debug!("'h' key pressed from CommandsPopup - opening history popup");
@@ -351,6 +356,51 @@ impl App {
                                      KeyCode::Enter => {
                                          if let Some((app_name, _)) = self.usage.get(*selected_index) {
                                              self.start_rename_app(app_name.clone());
+                                         }
+                                     }
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
+                                     _ => {}
+                                 }
+                             }
+                             AppState::SelectingCategory { selected_index } => {
+                                 match key.code {
+                                     KeyCode::Up => {
+                                         if *selected_index > 0 {
+                                             *selected_index -= 1;
+                                         }
+                                     }
+                                     KeyCode::Down => {
+                                         if *selected_index < self.usage.len().saturating_sub(1) {
+                                             *selected_index += 1;
+                                         }
+                                     }
+                                     KeyCode::Enter => {
+                                         if let Some((app_name, _)) = self.usage.get(*selected_index) {
+                                             self.start_category_menu(app_name.clone());
+                                         }
+                                     }
+                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
+                                     _ => {}
+                                 }
+                             }
+                             AppState::CategoryMenu { app_name, selected_index } => {
+                                 let categories = Self::get_category_options();
+                                 match key.code {
+                                     KeyCode::Up => {
+                                         if *selected_index > 0 {
+                                             *selected_index -= 1;
+                                         }
+                                     }
+                                     KeyCode::Down => {
+                                         if *selected_index < categories.len().saturating_sub(1) {
+                                             *selected_index += 1;
+                                         }
+                                     }
+                                     KeyCode::Enter => {
+                                         if let Some(category) = categories.get(*selected_index) {
+                                             let app = app_name.clone();
+                                             let cat = category.clone();
+                                             self.handle_category_selection(app, cat).await?;
                                          }
                                      }
                                      KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
@@ -502,9 +552,12 @@ impl App {
             }
             AppState::ViewingLogs => "Viewing Logs - Press any key to return".to_string(),
             AppState::SelectingApp { .. } => "Rename Mode - Use arrow keys to select an app".to_string(),
+            AppState::SelectingCategory { .. } => "Category Mode - Use arrow keys to select an app".to_string(),
+            AppState::CategoryMenu { .. } => "Category Mode - Use arrow keys to select a category".to_string(),
             AppState::Input { action, .. } => {
                 match action {
                     InputAction::RenameApp { .. } => "Rename Mode - Enter new name for the app".to_string(),
+                    InputAction::CreateCategory { .. } => "Category Mode - Enter custom category name (e.g., 🎮 Gaming)".to_string(),
                 }
             }
             AppState::CommandsPopup => "Commands Menu - Press key to execute or Esc to close".to_string(),
@@ -570,6 +623,77 @@ impl App {
                 f.render_widget(usage_list, chunks[1]);
             }
 
+            AppState::SelectingCategory { selected_index } => {
+                // Full-screen app selection view for category assignment
+                let max_items = (chunks[1].height.saturating_sub(2) as usize).min(20).max(5);
+                let usage_items: Vec<ListItem> = self
+                    .usage
+                    .iter()
+                    .enumerate()
+                    .take(max_items)
+                    .map(|(i, (app, duration))| {
+                        let hours = duration / 3600;
+                        let minutes = (duration % 3600) / 60;
+                        let prefix = if i == *selected_index { "→ " } else { "  " };
+
+                        let time_display = if hours > 0 {
+                            format!("{}h {}m", hours, minutes)
+                        } else {
+                            format!("{}m", minutes)
+                        };
+
+                        let clean_app = Self::clean_app_name(app);
+                        let (category, color) = self.get_app_category(app);
+                        let display = format!("{}{:<30} {} [{}]", prefix, clean_app, time_display, category);
+
+                        let style = if i == *selected_index {
+                            Style::default().fg(Color::Yellow)
+                        } else {
+                            Style::default().fg(color)
+                        };
+
+                        ListItem::new(Line::from(display)).style(style)
+                    })
+                    .collect();
+
+                let usage_list = List::new(usage_items)
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title("🏷️  Select App to Change Category (↑/↓ to navigate, Enter to select, Esc to cancel)"));
+                f.render_widget(usage_list, chunks[1]);
+            }
+
+            AppState::CategoryMenu { app_name, selected_index } => {
+                // Show category selection menu
+                let categories = Self::get_category_options();
+                let category_items: Vec<ListItem> = categories
+                    .iter()
+                    .enumerate()
+                    .map(|(i, category)| {
+                        let prefix = if i == *selected_index { "→ " } else { "  " };
+                        let display = format!("{}{}", prefix, category);
+
+                        let style = if i == *selected_index {
+                            Style::default().fg(Color::Yellow)
+                        } else {
+                            // Apply color based on category
+                            let color = Self::category_from_string(category).1;
+                            Style::default().fg(color)
+                        };
+
+                        ListItem::new(Line::from(display)).style(style)
+                    })
+                    .collect();
+
+                let clean_app = Self::clean_app_name(app_name);
+                let title = format!("🏷️  Select Category for '{}' (↑/↓ to navigate, Enter to select, Esc to cancel)", clean_app);
+                let category_list = List::new(category_items)
+                    .block(Block::default()
+                        .borders(Borders::ALL)
+                        .title(title));
+                f.render_widget(category_list, chunks[1]);
+            }
+
             AppState::Input { prompt, buffer, action } => {
                 // Full-screen input view with centered input box
                 let input_area = Self::centered_rect(70, 30, chunks[1]);
@@ -580,6 +704,7 @@ impl App {
                 // Determine title based on action
                 let title = match action {
                     InputAction::RenameApp { .. } => "✏️  Rename App",
+                    InputAction::CreateCategory { .. } => "🏷️  Create Custom Category",
                 };
 
                 // Create input text with cursor
@@ -623,6 +748,7 @@ impl App {
                     Line::from("  [h]    View session history (scrollable popup)"),
                     Line::from("  [b]    View activity breakdowns (scrollable popup)"),
                     Line::from("  [r]    Rename app/tab"),
+                    Line::from("  [c]    Change app category"),
                     Line::from("  [l]    View logs"),
                     Line::from("  [q]    Quit application (auto-saves)"),
                     Line::from(""),
@@ -1533,6 +1659,69 @@ impl App {
         };
     }
 
+    fn start_category_selection(&mut self) {
+        if !self.usage.is_empty() {
+            self.state = AppState::SelectingCategory { selected_index: 0 };
+        }
+    }
+
+    fn start_category_menu(&mut self, app_name: String) {
+        self.state = AppState::CategoryMenu { app_name, selected_index: 0 };
+    }
+
+    fn get_category_options() -> Vec<String> {
+        vec![
+            "💻 Development".to_string(),
+            "🌐 Browsing".to_string(),
+            "💬 Communication".to_string(),
+            "🎵 Media".to_string(),
+            "📁 Files".to_string(),
+            "📧 Email".to_string(),
+            "📄 Office".to_string(),
+            "📦 Other".to_string(),
+            "➕ Create New Category".to_string(),
+        ]
+    }
+
+    async fn handle_category_selection(&mut self, app_name: String, category: String) -> Result<()> {
+        if category == "➕ Create New Category" {
+            // User wants to create custom category
+            self.state = AppState::Input {
+                prompt: format!("Enter custom category for '{}' (e.g., 🎮 Gaming)", app_name),
+                buffer: String::new(),
+                action: InputAction::CreateCategory { app_name },
+            };
+        } else {
+            // Apply predefined category
+            if let Err(e) = self.database.update_app_category(&app_name, &category).await {
+                self.logs.push(format!("[{}] Failed to update category: {}", Local::now().format("%H:%M:%S"), e));
+            } else {
+                // Update current session if it matches
+                if let Some(session) = &mut self.current_session {
+                    if session.app_name == app_name {
+                        session.category = Some(category.clone());
+                    }
+                }
+                // Refresh ALL usage data
+                self.usage = self.database.get_app_usage().await?;
+                self.daily_usage = self.database.get_daily_usage().await?;
+                self.weekly_usage = self.database.get_weekly_usage().await?;
+                self.monthly_usage = self.database.get_monthly_usage().await?;
+                self.history = self.database.get_recent_sessions(30).await?;
+
+                // Update current_history based on current view mode
+                self.current_history = match &self.current_view_mode {
+                    ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                    ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                    ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                };
+                self.logs.push(format!("[{}] Updated category for '{}' to '{}'", Local::now().format("%H:%M:%S"), app_name, category));
+            }
+            self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() };
+        }
+        Ok(())
+    }
+
     fn view_logs(&mut self) {
         self.state = AppState::ViewingLogs;
     }
@@ -1651,6 +1840,36 @@ impl App {
                             };
                         }
                         self.logs.push(format!("[{}] Renamed '{}' to '{}' (preserved category: {})", Local::now().format("%H:%M:%S"), old_name, buffer, original_category));
+                    }
+                }
+                self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() };
+            }
+            InputAction::CreateCategory { app_name } => {
+                if !buffer.is_empty() {
+                    // Apply custom category
+                    if let Err(e) = self.database.update_app_category(&app_name, &buffer).await {
+                        self.logs.push(format!("[{}] Failed to create category: {}", Local::now().format("%H:%M:%S"), e));
+                    } else {
+                        // Update current session if it matches
+                        if let Some(session) = &mut self.current_session {
+                            if session.app_name == app_name {
+                                session.category = Some(buffer.clone());
+                            }
+                        }
+                        // Refresh ALL usage data
+                        self.usage = self.database.get_app_usage().await?;
+                        self.daily_usage = self.database.get_daily_usage().await?;
+                        self.weekly_usage = self.database.get_weekly_usage().await?;
+                        self.monthly_usage = self.database.get_monthly_usage().await?;
+                        self.history = self.database.get_recent_sessions(30).await?;
+
+                        // Update current_history based on current view mode
+                        self.current_history = match &self.current_view_mode {
+                            ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
+                            ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
+                            ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
+                        };
+                        self.logs.push(format!("[{}] Created and applied category '{}' for '{}'", Local::now().format("%H:%M:%S"), buffer, app_name));
                     }
                 }
                 self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() };

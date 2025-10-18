@@ -5,7 +5,7 @@ mod tracker;
 mod active_window;
 
 use anyhow::Result;
-use crate::active_window::daemon::Daemon;
+use crate::utils::active_window::daemon::Daemon;
 use crate::config::settings::Settings;
 use crate::database::connection::Database;
 use dotenvy::dotenv;
