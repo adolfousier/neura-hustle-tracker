@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.2 (2025-10-18)
+
+- **Terminal Parsing Enhancements**: Fixed terminal project and directory detection across all platforms (Linux Wayland/X11, macOS, Windows)
+  - Added tmux window name parsing from terminal titles (supports patterns like "tmux: window_name", "[tmux] window_name")
+  - Implemented tilde expansion for home directory detection using `std::env::var("HOME")`
+  - Enhanced project name extraction with better heuristics for home directory handling
+  - Added fallback parsing for various terminal title formats across different platforms
+  - Fixed "home" vs actual project names - now properly detects project directories instead of showing "~"
+  - Improved cross-platform compatibility for terminal title formats (Wayland D-Bus, X11, AppleScript, PowerShell)
+  - Added tmux multiplexer detection and window/pane count parsing
+  - Enhanced parser robustness with regex-based fallback patterns for edge cases
+
 ## v0.3.1 (2025-10-18)
 
 - **Major Code Refactoring (WIP)**: Started comprehensive refactoring to improve code organization and maintainability
