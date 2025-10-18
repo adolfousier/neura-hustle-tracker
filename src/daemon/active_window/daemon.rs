@@ -1,9 +1,10 @@
 use anyhow::Result;
-use chrono::Local;
+use chrono::{DateTime, Local};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::time;
+use rdev::{listen, EventType};
 
 use crate::daemon::database::connection::Database;
 use crate::models::session::Session;
@@ -16,11 +17,16 @@ pub struct Daemon {
     current_app: String,
     current_window: Option<String>,
     current_session: Option<Session>,
+    last_input: Arc<Mutex<DateTime<Local>>>,
 }
 
 impl Daemon {
     pub fn new(database: Database) -> Self {
         let monitor = AppMonitor::new();
+        let last_input = Arc::new(Mutex::new(Local::now()));
+
+        // Start input monitoring thread
+        Self::start_input_monitoring(Arc::clone(&last_input));
 
         Self {
             database,
@@ -28,7 +34,25 @@ impl Daemon {
             current_app: "unknown".to_string(),
             current_window: None,
             current_session: None,
+            last_input,
         }
+    }
+
+    // Input monitoring using rdev
+    fn start_input_monitoring(last_input: Arc<Mutex<DateTime<Local>>>) {
+        std::thread::spawn(move || {
+            let callback = move |event: rdev::Event| {
+                match event.event_type {
+                    EventType::KeyPress(_) | EventType::KeyRelease(_) | EventType::ButtonPress(_) | EventType::ButtonRelease(_) | EventType::MouseMove { .. } => {
+                        *last_input.lock().unwrap() = Local::now();
+                    }
+                    _ => {}
+                }
+            };
+            if let Err(error) = listen(callback) {
+                eprintln!("Error listening for input events in daemon: {:?}", error);
+            }
+        });
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -46,6 +70,10 @@ impl Daemon {
         let mut last_save = tokio::time::Instant::now();
         let save_interval = Duration::from_secs(3600);
 
+        let mut last_afk_check = tokio::time::Instant::now();
+        let afk_check_interval = Duration::from_secs(1); // Check AFK status every second
+        let afk_threshold = Duration::from_secs(300); // 5 minutes of idle = AFK
+
         loop {
             // Check for shutdown signal
             if shutdown_flag.load(Ordering::Relaxed) {
@@ -53,12 +81,64 @@ impl Daemon {
                 break;
             }
 
-            // Check for app or window change (use combined method for efficiency)
+            // Check for AFK status every second
+            if last_afk_check.elapsed() >= afk_check_interval {
+                let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
+                let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+
+                // If we have a current session, check if AFK state changed
+                if let Some(ref mut session) = self.current_session {
+                    let was_afk = session.is_afk.unwrap_or(false);
+
+                    // AFK state changed - end current session and start new one
+                    if was_afk != is_currently_afk {
+                        // Save the current session
+                        let mut old_session = self.current_session.take().unwrap();
+                        old_session.duration = Local::now().signed_duration_since(old_session.start_time).num_seconds();
+
+                        if let Err(e) = self.database.insert_session(&old_session).await {
+                            log::error!("Failed to save session on AFK state change: {}", e);
+                        } else {
+                            log::info!("Session saved on AFK state change: {} -> is_afk={}", old_session.app_name, is_currently_afk);
+                        }
+
+                        // Start new session with updated AFK state
+                        if is_currently_afk {
+                            // Starting AFK session
+                            self.switch_app("AFK".to_string(), Some("Away from keyboard".to_string())).await?;
+                            if let Some(ref mut new_session) = self.current_session {
+                                new_session.is_afk = Some(true);
+                            }
+                        } else {
+                            // Returning from AFK - get the actual active app
+                            if let Ok((active_app, active_window)) = self.monitor.get_active_window_info_async().await {
+                                self.switch_app(active_app.clone(), active_window.clone()).await?;
+                                if let Some(ref mut new_session) = self.current_session {
+                                    new_session.is_afk = Some(false);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                last_afk_check = tokio::time::Instant::now();
+            }
+
+            // Check for app or window change (but not if we're AFK)
             if let Ok((active_app, active_window)) = self.monitor.get_active_window_info_async().await {
-                if active_app != self.current_app || active_window != self.current_window {
+                let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
+                let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+
+                // Only track app changes if not AFK
+                if !is_currently_afk && (active_app != self.current_app || active_window != self.current_window) {
                     self.switch_app(active_app.clone(), active_window.clone()).await?;
                     self.current_app = active_app;
                     self.current_window = active_window;
+
+                    // Mark new session as not AFK
+                    if let Some(ref mut session) = self.current_session {
+                        session.is_afk = Some(false);
+                    }
                 }
             }
 
@@ -225,6 +305,7 @@ impl Daemon {
             ide_workspace: parsed.ide_workspace,
             parsed_data: parsed_json,
             parsing_success: Some(parsed.parsing_success),
+            is_afk: Some(false),
         }
     }
 }

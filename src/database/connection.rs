@@ -114,6 +114,15 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // AFK tracking columns
+        sqlx::query(
+            r#"
+            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_afk BOOLEAN DEFAULT FALSE
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         Ok(())
     }
 
@@ -127,7 +136,7 @@ impl Database {
                 editor_filename, editor_filepath, editor_project_path, editor_language,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success
+                parsed_data, parsing_success, is_afk
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8,
@@ -135,7 +144,7 @@ impl Database {
                 $13, $14, $15, $16,
                 $17, $18, $19,
                 $20, $21, $22,
-                $23, $24
+                $23, $24, $25
             ) RETURNING id
             "#,
         )
@@ -169,6 +178,8 @@ impl Database {
         // Metadata
         .bind(&session.parsed_data)
         .bind(session.parsing_success)
+        // AFK tracking
+        .bind(session.is_afk)
         .fetch_one(&self.pool)
         .await?;
         Ok(id.0)
@@ -184,7 +195,7 @@ impl Database {
                 editor_filename, editor_filepath, editor_project_path, editor_language,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success
+                parsed_data, parsing_success, is_afk
             FROM sessions
             ORDER BY start_time DESC
             LIMIT $1
@@ -198,7 +209,7 @@ impl Database {
 
     pub async fn get_app_usage(&self) -> Result<Vec<(String, i64)>> {
         let rows: Vec<(String, i64)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::BIGINT as total_duration FROM sessions GROUP BY app_name ORDER BY total_duration DESC",
+            "SELECT app_name, SUM(duration)::BIGINT as total_duration FROM sessions WHERE is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -241,7 +252,7 @@ impl Database {
         let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
 
         let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 AND is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC"
         )
         .bind(today_start)
         .fetch_all(&self.pool)
@@ -256,7 +267,7 @@ impl Database {
         let week_start = today_start - chrono::Duration::days(6);
 
         let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 AND is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC"
         )
         .bind(week_start)
         .fetch_all(&self.pool)
@@ -271,7 +282,7 @@ impl Database {
         let month_start = today_start - chrono::Duration::days(29);
 
         let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 AND is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC"
         )
         .bind(month_start)
         .fetch_all(&self.pool)
@@ -293,7 +304,7 @@ impl Database {
                 editor_filename, editor_filepath, editor_project_path, editor_language,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success
+                parsed_data, parsing_success, is_afk
             FROM sessions
             WHERE start_time >= $1
             ORDER BY start_time DESC
@@ -320,7 +331,7 @@ impl Database {
                 editor_filename, editor_filepath, editor_project_path, editor_language,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success
+                parsed_data, parsing_success, is_afk
             FROM sessions
             WHERE start_time >= $1
             ORDER BY start_time DESC
@@ -347,7 +358,7 @@ impl Database {
                 editor_filename, editor_filepath, editor_project_path, editor_language,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success
+                parsed_data, parsing_success, is_afk
             FROM sessions
             WHERE start_time >= $1
             ORDER BY start_time DESC

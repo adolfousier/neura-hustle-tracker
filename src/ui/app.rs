@@ -49,9 +49,10 @@ pub struct App {
     history: Vec<Session>,
     pub current_history: Vec<Session>,
     pub usage: Vec<(String, i64)>,
-    pub daily_usage: Vec<(String, i64)>,
+    pub daily_usage: Vec<(String, i64)>, // Hierarchical for Detailed Stats
     pub weekly_usage: Vec<(String, i64)>,
     pub monthly_usage: Vec<(String, i64)>,
+    pub flat_daily_usage: Vec<(String, i64)>, // Flat for Today's Activity Progress
     pub current_view_mode: ViewMode,  // Track current dashboard view mode
     pub logs: Vec<String>,
     pub manual_app_name: Option<String>,
@@ -88,6 +89,7 @@ impl App {
             daily_usage: vec![],
             weekly_usage: vec![],
             monthly_usage: vec![],
+            flat_daily_usage: vec![],
             current_view_mode: ViewMode::Daily,
             logs: vec![],
             manual_app_name: None,
@@ -133,8 +135,7 @@ impl App {
                     }
                     Err(e) => {
                         log::debug!("Failed to check Wayland idle time: {}", e);
-                        // Fallback: update every 60 seconds if we can't monitor properly
-                        *last_input.lock().unwrap() = Local::now();
+                        // Don't update last_input on error - let idle time accumulate naturally
                     }
                 }
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -198,10 +199,15 @@ impl App {
         // Load history and usage (load 30 sessions for display)
         self.history = self.database.get_recent_sessions(30).await.unwrap();
         self.usage = self.database.get_app_usage().await.unwrap();
-        self.daily_usage = self.database.get_daily_usage().await.unwrap();
-        self.weekly_usage = self.database.get_weekly_usage().await.unwrap();
-        self.monthly_usage = self.database.get_monthly_usage().await.unwrap();
-        self.current_history = self.history.clone();
+        self.current_history = self.database.get_daily_sessions().await.unwrap();
+
+        // Create hierarchical usage data from sessions for Detailed Stats
+        self.daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&self.current_history);
+        self.weekly_usage = self.daily_usage.clone();
+        self.monthly_usage = self.daily_usage.clone();
+
+        // Create flat usage data for Today's Activity Progress
+        self.flat_daily_usage = self.database.get_daily_usage().await.unwrap();
 
         eprintln!("Enabling raw mode...");
         enable_raw_mode().unwrap();
@@ -216,6 +222,10 @@ impl App {
         let mut last_data_refresh = Instant::now();
         let data_refresh_interval = Duration::from_secs(5); // Refresh dashboard data every 5 seconds for near real-time updates
 
+        let mut last_afk_check = Instant::now();
+        let afk_check_interval = Duration::from_secs(1); // Check AFK status every second
+        let afk_threshold = Duration::from_secs(300); // 5 minutes of idle = AFK
+
         loop {
             terminal.draw(|f| self.draw(f))?;
 
@@ -225,13 +235,65 @@ impl App {
                 break;
             }
 
-            // Check for app or window change
+            // Check for AFK status every second
+            if last_afk_check.elapsed() >= afk_check_interval {
+                let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
+                let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+
+                // If we have a current session, check if AFK state changed
+                if let Some(ref mut session) = self.current_session {
+                    let was_afk = session.is_afk.unwrap_or(false);
+
+                    // AFK state changed - end current session and start new one
+                    if was_afk != is_currently_afk {
+                        // Save the current session
+                        let mut old_session = self.current_session.take().unwrap();
+                        old_session.duration = Local::now().signed_duration_since(old_session.start_time).num_seconds();
+
+                        if let Err(e) = self.database.insert_session(&old_session).await {
+                            log::error!("Failed to save session on AFK state change: {}", e);
+                        } else {
+                            log::info!("Session saved on AFK state change: {} -> is_afk={}", old_session.app_name, is_currently_afk);
+                        }
+
+                        // Start new session with updated AFK state
+                        if is_currently_afk {
+                            // Starting AFK session
+                            self.switch_app("AFK".to_string()).await?;
+                            if let Some(ref mut new_session) = self.current_session {
+                                new_session.is_afk = Some(true);
+                            }
+                        } else {
+                            // Returning from AFK - get the actual active app
+                            if let Ok(active_app) = self.monitor.get_active_app_async().await {
+                                self.switch_app(active_app.clone()).await?;
+                                if let Some(ref mut new_session) = self.current_session {
+                                    new_session.is_afk = Some(false);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                last_afk_check = Instant::now();
+            }
+
+            // Check for app or window change (but not if we're AFK)
             if let Ok(active_app) = self.monitor.get_active_app_async().await {
                 let active_window = self.monitor.get_active_window_name_async().await.ok();
-                if active_app != self.current_app || active_window != self.current_window {
+                let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
+                let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+
+                // Only track app changes if not AFK
+                if !is_currently_afk && (active_app != self.current_app || active_window != self.current_window) {
                     self.switch_app(active_app.clone()).await?;
                     self.current_app = active_app;
                     self.current_window = active_window;
+
+                    // Mark new session as not AFK
+                    if let Some(ref mut session) = self.current_session {
+                        session.is_afk = Some(false);
+                    }
                 }
             }
 
@@ -475,9 +537,6 @@ impl App {
             if last_data_refresh.elapsed() >= data_refresh_interval {
                 self.history = self.database.get_recent_sessions(30).await.unwrap_or_default();
                 self.usage = self.database.get_app_usage().await.unwrap_or_default();
-                self.daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
-                self.weekly_usage = self.database.get_weekly_usage().await.unwrap_or_default();
-                self.monthly_usage = self.database.get_monthly_usage().await.unwrap_or_default();
 
                 // Update current_history based on current view mode
                 if let AppState::Dashboard { ref view_mode } = self.state {
@@ -486,6 +545,14 @@ impl App {
                         ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
                         ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
                     };
+
+                    // Create hierarchical usage data from current_history for Detailed Stats
+                    self.daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&self.current_history);
+                    self.weekly_usage = self.daily_usage.clone();
+                    self.monthly_usage = self.daily_usage.clone();
+
+                    // Create flat usage data for Today's Activity Progress
+                    self.flat_daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
                 }
 
                 // Update current session duration in history for real-time display
@@ -762,70 +829,41 @@ impl App {
     async fn refresh_all_data(&mut self) -> Result<()> {
         // Refresh ALL usage data
         self.usage = self.database.get_app_usage().await?;
-        self.daily_usage = self.database.get_daily_usage().await?;
-        self.weekly_usage = self.database.get_weekly_usage().await?;
-        self.monthly_usage = self.database.get_monthly_usage().await?;
-        self.history = self.database.get_recent_sessions(30).await?;
 
-        // Update current_history based on current view mode
+        // Update current_history based on current view mode FIRST
         self.current_history = match &self.current_view_mode {
             ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
             ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
             ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
         };
+
+        // Create hierarchical usage data from sessions using hierarchical module
+        self.daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&self.current_history);
+        self.weekly_usage = self.daily_usage.clone(); // Will be replaced based on view mode
+        self.monthly_usage = self.daily_usage.clone(); // Will be replaced based on view mode
+
+        // Create flat usage data for Today's Activity Progress
+        self.flat_daily_usage = self.database.get_daily_usage().await?;
+
+        self.history = self.database.get_recent_sessions(30).await?;
         Ok(())
     }
 
     fn load_breakdown_data_from_history(&mut self) {
-        // Aggregate breakdown data from current_history (which is already filtered by view mode)
+        // Use hierarchical module to create all breakdown data from current_history
+        self.browser_breakdown = crate::ui::hierarchical::create_browser_breakdown(&self.current_history);
+        self.project_breakdown = crate::ui::hierarchical::create_project_breakdown(&self.current_history);
+        self.file_breakdown = crate::ui::hierarchical::create_file_breakdown(&self.current_history);
+        self.terminal_breakdown = crate::ui::hierarchical::create_terminal_breakdown(&self.current_history);
 
-        // Browser breakdown
-        let mut browser_map: BTreeMap<String, i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let Some(url) = &session.browser_url {
-                // Extract domain from URL
-                let domain = url.split('/').nth(2).unwrap_or(url).to_string();
-                *browser_map.entry(domain).or_insert(0) += session.duration;
-            }
-        }
-        self.browser_breakdown = browser_map.into_iter().collect();
-        self.browser_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Project breakdown
-        let mut project_map: BTreeMap<String, i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let Some(project) = &session.terminal_project_name {
-                *project_map.entry(project.clone()).or_insert(0) += session.duration;
-            } else if let Some(project) = &session.ide_project_name {
-                *project_map.entry(project.clone()).or_insert(0) += session.duration;
-            }
-        }
-        self.project_breakdown = project_map.into_iter().collect();
-        self.project_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // File breakdown
-        let mut file_map: BTreeMap<(String, String), i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let (Some(filename), Some(language)) = (&session.editor_filename, &session.editor_language) {
-                *file_map.entry((filename.clone(), language.clone())).or_insert(0) += session.duration;
-            }
-        }
-        self.file_breakdown = file_map.into_iter().map(|((f, l), d)| (f, l, d)).collect();
-        self.file_breakdown.sort_by(|a, b| b.2.cmp(&a.2));
-
-        // Terminal breakdown
-        let mut terminal_map: BTreeMap<String, i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let Some(dir) = &session.terminal_directory {
-                *terminal_map.entry(dir.clone()).or_insert(0) += session.duration;
-            }
-        }
-        self.terminal_breakdown = terminal_map.into_iter().collect();
-        self.terminal_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Category breakdown
+        // Category breakdown - exclude AFK sessions
         let mut category_map: BTreeMap<String, i64> = BTreeMap::new();
         for session in &self.current_history {
+            // Skip AFK sessions
+            if session.is_afk.unwrap_or(false) {
+                continue;
+            }
+
             if let Some(category) = &session.category {
                 *category_map.entry(category.clone()).or_insert(0) += session.duration;
             }

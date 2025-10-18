@@ -45,5 +45,7 @@ pub fn create_session_with_parsing(app_name: String, window_name: Option<String>
         // Metadata
         parsed_data: parsed_json,
         parsing_success: Some(parsed.parsing_success),
+        // AFK tracking
+        is_afk: Some(false),
     }
 }

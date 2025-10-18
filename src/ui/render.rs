@@ -380,6 +380,7 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
     };
 
     // Create bar chart data - limit based on space
+    // Keep sub-entries but we'll track their parent for coloring
     let max_bars = if area.width < 80 { 5 } else if area.width < 120 { 8 } else { 10 };
     let bar_data: Vec<(&str, u64)> = data
         .iter()
@@ -477,10 +478,21 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
         let scale_hours = scale_minutes / 60;
 
         // Create bars with category-based colors and hour labels
+        // Track parent app for sub-entries coloring
+        let mut last_parent_app = "";
         let bars: Vec<Bar> = bar_data
             .iter()
             .map(|(app_name, value_minutes)| {
-                let (_, color) = app.get_app_category(app_name);
+                // Determine color: if sub-entry, use parent's color; otherwise use own category
+                let (_, color) = if app_name.starts_with("  └─") {
+                    // This is a sub-entry - use parent app's category color
+                    app.get_app_category(last_parent_app)
+                } else {
+                    // This is a parent app - track it and use its category
+                    last_parent_app = app_name;
+                    app.get_app_category(app_name)
+                };
+
                 let hours = value_minutes / 60;
                 let mins = value_minutes % 60;
 
@@ -516,43 +528,70 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
 }
 
 pub fn draw_stats(f: &mut Frame, area: Rect, data: &[(String, i64)]) {
-    // Adaptive number of items based on available height
-    let max_items = (area.height.saturating_sub(3) as usize).min(15).max(3);
+    // Adaptive number of items based on available height - more items for hierarchical view
+    let max_items = (area.height.saturating_sub(3) as usize).min(30).max(5);
 
     let mut stats_items: Vec<ListItem> = Vec::new();
 
     // Add top margin
     stats_items.push(ListItem::new(Line::from("")));
 
-    stats_items.extend(data
-        .iter()
-        .take(max_items)
-        .map(|(app, duration)| {
-            let hours = duration / 3600;
-            let minutes = (duration % 3600) / 60;
+    // Group data hierarchically by category
+    // We'll detect if an item starts with "  └─" to treat it as a child
+    let mut shown_items = 0;
+    for (app, duration) in data.iter() {
+        if shown_items >= max_items {
+            break;
+        }
 
-            // Clean and truncate app name if terminal is narrow
-            let clean_app = App::clean_app_name(app);
-            let app_display = if area.width < 40 {
-                if clean_app.len() > 15 {
-                    format!("{}...", &clean_app[..12])
-                } else {
-                    clean_app
-                }
+        let hours = duration / 3600;
+        let minutes = (duration % 3600) / 60;
+
+        // Check if this is a child item (hierarchical sub-entry)
+        let is_child = app.starts_with("  └─");
+
+        // Clean and truncate app name if terminal is narrow
+        let clean_app = App::clean_app_name(app);
+        let app_display = if area.width < 40 {
+            if clean_app.len() > 20 {
+                format!("{}...", &clean_app[..17])
             } else {
                 clean_app
-            };
+            }
+        } else {
+            clean_app
+        };
 
-            let display = if hours > 0 {
-                format!("  {} - {}h {}m", app_display, hours, minutes)
-            } else {
-                format!("  {} - {}m", app_display, minutes)
-            };
-            ListItem::new(Line::from(display))
-        })
-        .collect::<Vec<ListItem>>());
+        let time_str = if hours > 0 {
+            format!("{}h {}m", hours, minutes)
+        } else {
+            format!("{}m", minutes)
+        };
 
-    let total_duration: i64 = data.iter().map(|(_, d)| d).sum();
+        // Format display based on whether it's a parent or child entry
+        let display = if is_child {
+            // Child entries are already indented, just add time
+            format!("{}  {}", app_display, time_str)
+        } else {
+            // Parent entries
+            format!("  {} - {}", app_display, time_str)
+        };
+
+        // Color child entries differently
+        let item_style = if is_child {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        stats_items.push(ListItem::new(Line::from(display)).style(item_style));
+        shown_items += 1;
+    }
+
+    let total_duration: i64 = data.iter()
+        .filter(|(app, _)| !app.starts_with("  └─")) // Only count parent entries
+        .map(|(_, d)| d)
+        .sum();
     let total_hours = total_duration / 3600;
     let total_minutes = (total_duration % 3600) / 60;
     let stats_title = if total_hours > 0 {
@@ -672,10 +711,14 @@ pub fn draw_history(app: &App, f: &mut Frame, area: Rect) {
 
 pub fn draw_pie_chart(app: &App, f: &mut Frame, area: Rect, data: &[(String, i64)]) {
     // Calculate category totals - using BTreeMap for stable sorted order
+    // Filter out sub-entries (they start with "  └─")
     let mut categories: BTreeMap<&str, (i64, Color)> = BTreeMap::new();
-    let total: i64 = data.iter().map(|(_, d)| d).sum();
+    let total: i64 = data.iter()
+        .filter(|(app_name, _)| !app_name.starts_with("  └─"))
+        .map(|(_, d)| d)
+        .sum();
 
-    for (app_name, duration) in data {
+    for (app_name, duration) in data.iter().filter(|(app_name, _)| !app_name.starts_with("  └─")) {
         let (category, color) = app.get_app_category(app_name);
         let entry = categories.entry(category).or_insert((0, color));
         entry.0 += duration;
@@ -719,7 +762,7 @@ pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect) {
     // Real-time progress bars showing % of day for each app
     let mut progress_lines = vec![];
 
-    if app.daily_usage.is_empty() {
+    if app.flat_daily_usage.is_empty() {
         progress_lines.push(Line::from("No activity data yet today"));
         let progress = Paragraph::new(progress_lines)
             .block(Block::default().borders(Borders::ALL).title("📊 Today's Activity Progress"));
@@ -732,8 +775,8 @@ pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect) {
     let start_of_day = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Local).unwrap();
     let seconds_since_midnight = now.signed_duration_since(start_of_day).num_seconds() as f64;
 
-    // Sort apps by usage time (descending)
-    let mut sorted_apps: Vec<_> = app.daily_usage.iter().collect();
+    // Sort apps by usage time (descending) - use flat_daily_usage for progress bars
+    let mut sorted_apps: Vec<_> = app.flat_daily_usage.iter().collect();
     sorted_apps.sort_by(|a, b| b.1.cmp(&a.1));
 
     // Limit to top apps that fit in the area
@@ -795,19 +838,32 @@ pub fn draw_afk(app: &App, f: &mut Frame, area: Rect) {
     let idle_minutes = idle_duration / 60;
     let idle_seconds = idle_duration % 60;
 
-    // Calculate average keyboard activity percentage (total tracking time vs idle time)
-    // Use daily usage to calculate total tracking time today
-    let total_tracking_today: i64 = app.daily_usage.iter().map(|(_, d)| d).sum();
+    // Calculate average keyboard activity percentage by excluding AFK sessions
+    // Total time = all sessions today
+    let total_tracking_today: i64 = app.current_history.iter().map(|s| s.duration).sum();
 
-    // Estimate active time: total tracking time - (idle time if currently AFK)
-    let active_time = if is_afk && idle_duration > afk_threshold_secs {
-        total_tracking_today.saturating_sub(idle_duration)
+    // Active time = only non-AFK sessions
+    let active_time: i64 = app.current_history.iter()
+        .filter(|s| !s.is_afk.unwrap_or(false))
+        .map(|s| s.duration)
+        .sum();
+
+    // Add current session if it exists and is not AFK
+    let current_active_time = if let Some(ref session) = app.current_session {
+        if !session.is_afk.unwrap_or(false) {
+            Local::now().signed_duration_since(session.start_time).num_seconds()
+        } else {
+            0
+        }
     } else {
-        total_tracking_today
+        0
     };
 
-    let avg_activity_percentage = if total_tracking_today > 0 {
-        ((active_time as f64 / total_tracking_today as f64) * 100.0).min(100.0)
+    let total_active_time = active_time + current_active_time;
+    let total_time_including_current = total_tracking_today + current_active_time;
+
+    let avg_activity_percentage = if total_time_including_current > 0 {
+        ((total_active_time as f64 / total_time_including_current as f64) * 100.0).min(100.0)
     } else {
         100.0 // Default to 100% if no data yet
     };
