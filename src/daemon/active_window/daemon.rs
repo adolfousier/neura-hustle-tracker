@@ -5,11 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
 
-use crate::config::settings::Settings;
-use crate::database::connection::Database;
+use crate::daemon::database::connection::Database;
 use crate::models::session::Session;
-use crate::tracker::monitor::AppMonitor;
-use crate::tracker::parser;
+use crate::daemon::tracker::{monitor::AppMonitor};
+use crate::daemon::tracker::parser;
 
 pub struct Daemon {
     database: Database,

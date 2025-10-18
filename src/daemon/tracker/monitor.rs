@@ -55,9 +55,6 @@ impl AppMonitor {
         Self { use_wayland }
     }
 
-    pub fn uses_wayland(&self) -> bool {
-        self.use_wayland
-    }
 
     fn is_wayland() -> bool {
         #[cfg(target_os = "linux")]
@@ -96,140 +93,45 @@ impl AppMonitor {
     }
 
     // Get both app and window info in a single call (more efficient for macOS AppleScript)
-    pub async fn get_active_app_async(&self) -> Result<String> {
+    pub async fn get_active_window_info_async(&self) -> Result<(String, Option<String>)> {
         if self.use_wayland {
-            // Use Wayland D-Bus method
             match Self::get_active_window_wayland().await {
-                Ok((wm_class, _title)) => {
-                    log::info!("Detected active app (Wayland): {}", wm_class);
-                    Ok(self.fix_app_name(wm_class))
+                Ok((wm_class, title)) => {
+                    let app_name = self.fix_app_name(wm_class);
+                    return Ok((app_name, Some(title)));
                 }
-                Err(e) => {
-                    let error_msg = format!(
-                        "Wayland window detection failed: {}. \
-                        Make sure the 'Window Calls' GNOME extension is installed and enabled. \
-                        Install from: https://extensions.gnome.org/extension/4724/window-calls/",
-                        e
-                    );
-                    log::warn!("{}", error_msg);
-                    Err(anyhow::anyhow!(error_msg))
-                }
+                Err(_) => return Err(anyhow::anyhow!("Wayland detection failed")),
             }
-        } else {
-            // Use platform-specific native APIs
-            match get_active_window() {
-                Ok(active_window) => {
-                    // Platform-specific debug logging
-                    #[cfg(target_os = "macos")]
-                    log::debug!("[macOS] Raw window - app: '{}', title: '{}', path: {:?}, position: {:?}",
-                               active_window.app_name,
-                               active_window.title,
-                               active_window.process_path,
-                               active_window.position);
+        }
 
-                    #[cfg(target_os = "windows")]
-                    log::debug!("[Windows] Raw window - app: '{}', title: '{}', path: {:?}, position: {:?}",
-                               active_window.app_name,
-                               active_window.title,
-                               active_window.process_path,
-                               active_window.position);
-
-                    #[cfg(target_os = "linux")]
-                    log::debug!("[Linux/X11] Raw window - app: '{}', title: '{}'",
-                               active_window.app_name,
-                               active_window.title);
-
-                    let original_name = active_window.app_name.clone();
-                    let fixed_name = self.fix_app_name(original_name.clone());
-
-                    if original_name != fixed_name {
-                        log::info!("App detected: '{}' (normalized from '{}')", fixed_name, original_name);
-                    } else {
-                        log::info!("App detected: '{}'", fixed_name);
+        // Try active-win-pos-rs first
+        match get_active_window() {
+            Ok(active_window) => {
+                let app_name = self.fix_app_name(active_window.app_name.clone());
+                let window_title = if active_window.title.is_empty() || active_window.title == active_window.app_name {
+                    None
+                } else {
+                    Some(active_window.title)
+                };
+                return Ok((app_name, window_title));
+            }
+            Err(_) => {
+                // On macOS, fallback to AppleScript
+                #[cfg(target_os = "macos")]
+                {
+                    if let Ok((app, title)) = Self::get_active_window_info_macos().await {
+                        let app_name = self.fix_app_name(app);
+                        let window_title = if title.is_empty() { None } else { Some(title) };
+                        return Ok((app_name, window_title));
                     }
-
-                    Ok(fixed_name)
-                }
-                Err(e) => {
-                    log::error!("Failed to get active window: {:?}", e);
-
-                    // On macOS, try AppleScript as fallback
-                    #[cfg(target_os = "macos")]
-                    {
-                        log::info!("active-win-pos-rs failed, trying AppleScript fallback...");
-                        match Self::get_active_app_macos().await {
-                            Ok(app_name) => {
-                                log::info!("AppleScript successfully detected app: '{}'", app_name);
-                                return Ok(self.fix_app_name(app_name));
-                            }
-                            Err(applescript_err) => {
-                                log::error!("AppleScript fallback also failed: {}", applescript_err);
-                            }
-                        }
-                    }
-
-                    let error_msg = "Failed to get active window";
-                    log::warn!("{}", error_msg);
-                    Err(anyhow::anyhow!(error_msg))
                 }
             }
         }
+
+        Err(anyhow::anyhow!("Failed to get window info"))
     }
 
-    pub async fn get_active_window_name_async(&self) -> Result<String> {
-        if self.use_wayland {
-            // Use Wayland D-Bus method
-            match Self::get_active_window_wayland().await {
-                Ok((_wm_class, title)) => Ok(title),
-                Err(_) => {
-                    log::warn!("Failed to get active window title (Wayland).");
-                    Ok("Unknown Window".to_string())
-                }
-            }
-        } else {
-            // Use platform-specific native APIs
-            match get_active_window() {
-                Ok(active_window) => {
-                    let title = active_window.title.clone();
 
-                    // On macOS, if we get a generic title (app name only), try AppleScript fallback
-                    #[cfg(target_os = "macos")]
-                    {
-                        let app_name = active_window.app_name.clone();
-                        if title == app_name || title.is_empty() || title == "Unknown" {
-                            log::debug!("Generic title detected for '{}', trying AppleScript fallback", app_name);
-                            if let Ok(detailed_title) = Self::get_window_title_macos(&app_name).await {
-                                if !detailed_title.is_empty() && detailed_title != app_name {
-                                    log::info!("AppleScript retrieved title for {}: '{}'", app_name, detailed_title);
-                                    return Ok(detailed_title);
-                                }
-                            }
-                        }
-                    }
-
-                    // On Windows, if we get a generic title, try PowerShell fallback
-                    #[cfg(target_os = "windows")]
-                    {
-                        if title == app_name || title.is_empty() || title == "Unknown" {
-                            log::debug!("Generic title detected for '{}', trying PowerShell fallback", app_name);
-                            if let Ok(detailed_title) = Self::get_window_title_windows(&app_name).await {
-                                if !detailed_title.is_empty() && detailed_title != app_name {
-                                    log::info!("PowerShell retrieved title for {}: '{}'", app_name, detailed_title);
-                                    return Ok(detailed_title);
-                                }
-                            }
-                        }
-                    }
-
-                    Ok(title)
-                }
-                Err(_) => {
-                    log::warn!("Failed to get active window title.");
-                    Ok("Unknown Window".to_string())
-                }
-            }
-        }
-    }
 
     #[cfg(target_os = "macos")]
     async fn get_active_app_macos() -> Result<String> {

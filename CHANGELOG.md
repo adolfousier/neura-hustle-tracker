@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.1 (2025-10-18)
+
+- **Major Code Refactoring (WIP)**: Started comprehensive refactoring to improve code organization and maintainability
+  - Extracted rendering logic from `app.rs` to `src/ui/render.rs`
+  - Created `src/ui/commands.rs` module for command execution logic
+  - Created `src/ui/session.rs` module for session creation with parsing
+  - Created `src/ui/tracking.rs` module for tracking operations
+  - Moved `parser.rs` from `tracker` to `ui` module for better organization
+- **Binary Separation**: Properly separated daemon and main binary modules
+  - Created daemon-specific database module at `src/daemon/database/`
+  - Created daemon-specific tracker module at `src/daemon/tracker/`
+  - Main binary uses shared `src/database/` and `src/tracker/` modules
+  - Removed unused methods from each binary's modules
+  - Achieved **zero compiler warnings** in both `neura_hustle_tracker` and `neura_hustle_daemon` binaries
+- **Timezone Bug Fix**: Fixed daily tracking to use local midnight instead of UTC
+  - All date range queries now use local timezone for accurate daily/weekly/monthly tracking
+  - Daily tracking correctly starts at 00:00 local time
+- **Code Cleanup**:
+  - Removed unused modules and methods from both binaries
+  - Fixed Cargo.toml daemon path from `src/utils/daemon_main.rs` to `src/daemon_main.rs`
+
 ## v0.3.0 (2025-10-18)
 
 - **Manual Category Management**: New 'c' command allows users to manually assign and create custom categories for apps
