@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3 (2025-10-18)
+
+- Release 0.3.2: improvements in fetching and storing terminal/projects data
+
 ## v0.3.2 (2025-10-18)
 
 - **Terminal Parsing Enhancements**: Fixed terminal project and directory detection across all platforms (Linux Wayland/X11, macOS, Windows)

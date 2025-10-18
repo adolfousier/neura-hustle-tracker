@@ -1,6 +1,52 @@
 use std::collections::BTreeMap;
 use crate::models::session::Session;
 
+/// Extract project name from directory path with improved heuristics
+fn extract_project_name(path: &str) -> Option<String> {
+    // Handle home directory specially
+    if let Ok(home) = std::env::var("HOME") {
+        if path == home || path == "~" {
+            return Some("Home".to_string());
+        }
+        if path.starts_with(&format!("{}/", home)) {
+            // Extract the first directory after home (e.g., ~/Documents -> Documents)
+            let after_home = &path[home.len() + 1..];
+            if let Some(slash_pos) = after_home.find('/') {
+                let first_dir = &after_home[..slash_pos];
+                if !first_dir.is_empty() {
+                    return Some(first_dir.to_string());
+                }
+            } else if !after_home.is_empty() {
+                return Some(after_home.to_string());
+            }
+        }
+    }
+
+    // Standard project extraction from path
+    let parts: Vec<&str> = path.split('/').collect();
+
+    // Get last non-empty component, skipping common non-project directories
+    let skip_dirs = ["bin", "usr", "etc", "var", "tmp", "dev", "proc", "sys", "home", "root"];
+
+    for part in parts.iter().rev() {
+        let part_lower = part.to_lowercase();
+        if !part.is_empty() && *part != "." && *part != ".." && !skip_dirs.contains(&part_lower.as_str()) {
+            // Additional heuristics: prefer directories that look like projects
+            if part.chars().next().map_or(false, |c| c.is_alphabetic()) && part.len() >= 2 {
+                return Some(part.to_string());
+            }
+        }
+    }
+
+    // Fallback: if we have any valid directory component
+    for part in parts.iter().rev() {
+        if !part.is_empty() && *part != "." && *part != ".." {
+            return Some(part.to_string());
+        }
+    }
+
+    None
+}
 /// Creates hierarchical usage data from sessions for display in stats
 /// Format: App entries with sub-entries indented with "  └─ "
 pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<(String, i64)> {
@@ -139,19 +185,36 @@ pub fn create_terminal_breakdown(sessions: &[Session]) -> Vec<(String, i64)> {
             continue;
         }
 
-        if let Some(dir) = &session.terminal_directory {
-            let project = session.terminal_project_name.clone().unwrap_or_else(|| "Other".to_string());
-            let dir_map = terminal_project_map.entry(project).or_insert_with(BTreeMap::new);
-            *dir_map.entry(dir.clone()).or_insert(0) += session.duration;
-        }
+        // Determine project name: prefer tmux window name, then terminal project, then directory-based
+        let project_name = if let Some(tmux_window) = &session.tmux_window_name {
+            // When tmux is detected, use the window name as the project
+            tmux_window.clone()
+        } else if let Some(terminal_project) = &session.terminal_project_name {
+            terminal_project.clone()
+        } else if let Some(dir) = &session.terminal_directory {
+            // Fallback to directory-based project extraction
+            extract_project_name(dir).unwrap_or_else(|| "Other".to_string())
+        } else {
+            "Other".to_string()
+        };
 
-        // Also include tmux/multiplexer data
-        if let Some(tmux_window) = &session.tmux_window_name {
-            let project = session.terminal_project_name.clone().unwrap_or_else(|| "tmux".to_string());
-            let dir_map = terminal_project_map.entry(project).or_insert_with(BTreeMap::new);
-            let entry = format!("tmux: {}", tmux_window);
-            *dir_map.entry(entry).or_insert(0) += session.duration;
-        }
+        // Add the session to the project map
+        let dir_map = terminal_project_map.entry(project_name).or_insert_with(BTreeMap::new);
+
+        // Use directory as sub-entry, or tmux info if available
+        let sub_entry = if let Some(tmux_window) = &session.tmux_window_name {
+            if let Some(dir) = &session.terminal_directory {
+                format!("{} ({})", extract_project_name(dir).unwrap_or_else(|| dir.clone()), tmux_window)
+            } else {
+                format!("tmux: {}", tmux_window)
+            }
+        } else if let Some(dir) = &session.terminal_directory {
+            dir.clone()
+        } else {
+            "terminal".to_string()
+        };
+
+        *dir_map.entry(sub_entry).or_insert(0) += session.duration;
     }
 
     flatten_hierarchical_map(terminal_project_map, 3)

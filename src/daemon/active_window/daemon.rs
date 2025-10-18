@@ -44,6 +44,7 @@ impl Daemon {
             let callback = move |event: rdev::Event| {
                 match event.event_type {
                     EventType::KeyPress(_) | EventType::KeyRelease(_) | EventType::ButtonPress(_) | EventType::ButtonRelease(_) | EventType::MouseMove { .. } => {
+                        log::debug!("Input event detected: {:?}", event.event_type);
                         *last_input.lock().unwrap() = Local::now();
                     }
                     _ => {}

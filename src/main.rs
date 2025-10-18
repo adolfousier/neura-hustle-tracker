@@ -11,9 +11,22 @@ use crate::ui::app::App;
 use dotenvy::dotenv;
 use std::env;
 use std::fs::OpenOptions;
+use clap::{Arg, Command};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let matches = Command::new("Neura Hustle Tracker")
+        .version("0.3.2")
+        .author("Your Name")
+        .about("Track your application usage")
+        .arg(
+            Arg::new("test-idle")
+                .long("test-idle")
+                .help("Test D-Bus idle detection instead of running the full UI")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .get_matches();
+
     // Load .env file
     dotenv().ok();
 
@@ -50,6 +63,13 @@ async fn main() -> Result<()> {
         .init();
     }
 
+    // Check if we're running idle test mode
+    if matches.get_flag("test-idle") {
+        println!("Testing Wayland D-Bus idle detection...");
+        test_idle_detection().await?;
+        return Ok(());
+    }
+
     log::info!("Starting Neura Hustle Tracker");
     let settings = Settings::new().unwrap();
     log::info!("Connecting to database...");
@@ -60,6 +80,24 @@ async fn main() -> Result<()> {
 
     let mut app = App::new(database);
     app.run().await?;
+
+    Ok(())
+}
+
+async fn test_idle_detection() -> Result<()> {
+    println!("Testing Wayland D-Bus idle detection...");
+
+    // Import the idle detection function from the app module
+    use crate::ui::app::App;
+
+    match App::check_wayland_idle_time().await {
+        Ok(idle_time) => {
+            println!("✅ Success! Idle time: {} seconds", idle_time);
+        }
+        Err(e) => {
+            println!("❌ Failed: {}", e);
+        }
+    }
 
     Ok(())
 }
