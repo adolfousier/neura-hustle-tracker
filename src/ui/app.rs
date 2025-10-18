@@ -49,9 +49,10 @@ pub struct App {
     history: Vec<Session>,
     pub current_history: Vec<Session>,
     pub usage: Vec<(String, i64)>,
-    pub daily_usage: Vec<(String, i64)>,
+    pub daily_usage: Vec<(String, i64)>, // Hierarchical for Detailed Stats
     pub weekly_usage: Vec<(String, i64)>,
     pub monthly_usage: Vec<(String, i64)>,
+    pub flat_daily_usage: Vec<(String, i64)>, // Flat for Today's Activity Progress
     pub current_view_mode: ViewMode,  // Track current dashboard view mode
     pub logs: Vec<String>,
     pub manual_app_name: Option<String>,
@@ -74,9 +75,12 @@ impl App {
 
         // Choose input monitoring method based on session type
         if monitor.uses_wayland() {
+            // On Wayland, use D-Bus idle monitoring
+            log::info!("Wayland detected - using D-Bus idle monitoring");
             Self::start_wayland_input_monitoring(Arc::clone(&last_input));
         } else {
-            Self::start_x11_input_monitoring(Arc::clone(&last_input));
+            // On X11, use rdev for direct input event monitoring
+            Self::start_rdev_input_monitoring(Arc::clone(&last_input));
         }
         Self {
             state: AppState::Dashboard { view_mode: ViewMode::Daily },
@@ -88,6 +92,7 @@ impl App {
             daily_usage: vec![],
             weekly_usage: vec![],
             monthly_usage: vec![],
+            flat_daily_usage: vec![],
             current_view_mode: ViewMode::Daily,
             logs: vec![],
             manual_app_name: None,
@@ -103,12 +108,13 @@ impl App {
         }
     }
 
-    // X11 input monitoring using rdev
-    fn start_x11_input_monitoring(last_input: Arc<Mutex<DateTime<Local>>>) {
+    // Cross-platform input monitoring using rdev
+    fn start_rdev_input_monitoring(last_input: Arc<Mutex<DateTime<Local>>>) {
         std::thread::spawn(move || {
             let callback = move |event: rdev::Event| {
                 match event.event_type {
                     EventType::KeyPress(_) | EventType::KeyRelease(_) | EventType::ButtonPress(_) | EventType::ButtonRelease(_) | EventType::MouseMove { .. } => {
+                        log::debug!("Input event detected: {:?}", event.event_type);
                         *last_input.lock().unwrap() = Local::now();
                     }
                     _ => {}
@@ -120,58 +126,218 @@ impl App {
         });
     }
 
-    // Wayland input monitoring using D-Bus idle monitoring
+    // Wayland input monitoring using D-Bus idle monitoring + window change detection
     fn start_wayland_input_monitoring(last_input: Arc<Mutex<DateTime<Local>>>) {
+        let monitor = AppMonitor::new(); // Create new monitor for the async task
         tokio::spawn(async move {
+            let mut last_window_check = tokio::time::Instant::now();
+            let mut last_window_info: Option<(String, Option<String>)> = None;
+            let mut last_fallback_update = tokio::time::Instant::now();
+
             loop {
+                // First, try D-Bus idle monitoring
                 match Self::check_wayland_idle_time().await {
                     Ok(idle_seconds) => {
-                        // If idle time is less than 10 seconds, consider it as recent activity
-                        if idle_seconds < 10 {
+                        log::debug!("Wayland idle time: {} seconds", idle_seconds);
+                        // If idle time is very low, consider it as recent activity
+                        if idle_seconds < 3 {
                             *last_input.lock().unwrap() = Local::now();
+                            log::debug!("Updated last_input due to low idle time");
                         }
+                        // If idle time is moderate but still active, nudge the timer
+                        else if idle_seconds < 15 {
+                            let current = *last_input.lock().unwrap();
+                            let time_since_last_input = Local::now().signed_duration_since(current).num_seconds();
+                            // If it's been more than 10 seconds since last update, nudge it
+                            if time_since_last_input > 10 {
+                                *last_input.lock().unwrap() = Local::now() - chrono::Duration::seconds(10);
+                                log::debug!("Nudged last_input for moderate idle time");
+                            }
+                        }
+                        // If idle time is high, don't update - let AFK detection work
                     }
                     Err(e) => {
-                        log::debug!("Failed to check Wayland idle time: {}", e);
-                        // Fallback: update every 60 seconds if we can't monitor properly
-                        *last_input.lock().unwrap() = Local::now();
+                        log::warn!("Failed to check Wayland idle time: {}", e);
+                        // Fallback: log when D-Bus fails, but don't assume activity
+                        // Window changes and low idle times will still update last_input
+                        if last_fallback_update.elapsed() >= tokio::time::Duration::from_secs(60) {
+                            last_fallback_update = tokio::time::Instant::now();
+                            log::info!("D-Bus idle monitoring failed - relying on window changes for activity detection");
+                        }
+
+                        // Also check for window changes as additional activity detection
+                        if last_window_check.elapsed() >= tokio::time::Duration::from_secs(2) {
+                            match tokio::join!(
+                                monitor.get_active_app_async(),
+                                monitor.get_active_window_name_async()
+                            ) {
+                                (Ok(app), Ok(window_name)) => {
+                                    let window = if window_name.is_empty() { None } else { Some(window_name) };
+                                    let current_info = (app.clone(), window.clone());
+                                    if last_window_info.as_ref() != Some(&current_info) {
+                                        // Window changed - consider this as activity
+                                        *last_input.lock().unwrap() = Local::now();
+                                        log::debug!("Updated last_input due to window change: {} -> {:?}", app, window);
+                                        last_window_info = Some(current_info);
+                                    }
+                                }
+                                _ => {
+                                    // Window detection also failed - this is bad
+                                    log::warn!("Both idle monitoring and window detection failed");
+                                }
+                            }
+                            last_window_check = tokio::time::Instant::now();
+                        }
                     }
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         });
     }
 
-    // Check idle time using GNOME Session Manager D-Bus interface
-    async fn check_wayland_idle_time() -> Result<u32> {
+    // Check idle time using GNOME D-Bus interfaces
+    pub async fn check_wayland_idle_time() -> Result<u32> {
         let connection = zbus::Connection::session().await?;
 
-        // Try GNOME Session Manager idle time
+        // Try GNOME Mutter Idle Monitor with proper monitor creation
+        match Self::get_mutter_idle_time(&connection).await {
+            Ok(idle_time) => Ok(idle_time),
+            Err(e1) => {
+                log::debug!("Mutter IdleMonitor failed: {}", e1);
+                // Fallback: try GNOME Session Manager
+                match connection.call_method(
+                    Some("org.gnome.SessionManager"),
+                    "/org/gnome/SessionManager/Presence",
+                    Some("org.gnome.SessionManager.Presence"),
+                    "GetIdleTime",
+                    &(),
+                ).await {
+                    Ok(response) => {
+                        let idle_time: u64 = response.body().deserialize()?;
+                        Ok((idle_time / 1000) as u32)
+                    }
+                    Err(e2) => {
+                        log::debug!("SessionManager Presence failed: {}", e2);
+                        // Try logind idle hint (systemd)
+                        match connection.call_method(
+                            Some("org.freedesktop.login1"),
+                            "/org/freedesktop/login1/session/auto",
+                            Some("org.freedesktop.login1.Session"),
+                            "GetIdleHint",
+                            &(),
+                        ).await {
+                            Ok(response) => {
+                                let idle_hint: bool = response.body().deserialize()?;
+                                // GetIdleHint returns boolean, not time
+                                // If idle, assume high idle time; if not idle, assume 0
+                                Ok(if idle_hint { 300 } else { 0 }) // 5 minutes or 0
+                            }
+                            Err(e3) => {
+                                log::debug!("logind IdleHint failed: {}", e3);
+                                // Try org.freedesktop.ScreenSaver
+                                match connection.call_method(
+                                    Some("org.freedesktop.ScreenSaver"),
+                                    "/org/freedesktop/ScreenSaver",
+                                    Some("org.freedesktop.ScreenSaver"),
+                                    "GetSessionIdleTime",
+                                    &(),
+                                ).await {
+                                    Ok(response) => {
+                                        let idle_time: u64 = response.body().deserialize()?;
+                                        Ok((idle_time / 1000) as u32)
+                                    }
+                                    Err(e4) => {
+                                        log::debug!("ScreenSaver GetSessionIdleTime failed: {}", e4);
+                                        // Try alternative ScreenSaver method
+                                        match connection.call_method(
+                                            Some("org.freedesktop.ScreenSaver"),
+                                            "/org/freedesktop/ScreenSaver",
+                                            Some("org.freedesktop.ScreenSaver"),
+                                            "GetActiveTime",
+                                            &(),
+                                        ).await {
+                                            Ok(response) => {
+                                                let active_time: u64 = response.body().deserialize()?;
+                                                Ok((active_time / 1000) as u32)
+                                            }
+                                            Err(e5) => {
+                                                log::debug!("ScreenSaver GetActiveTime failed: {}", e5);
+                                                // Last resort: try to detect if we can connect to GNOME Shell
+                                                // If GNOME Shell is responding, assume some activity
+                                                match connection.call_method(
+                                                    Some("org.gnome.Shell"),
+                                                    "/org/gnome/Shell",
+                                                    Some("org.gnome.Shell"),
+                                                    "Eval",
+                                                    &("1 + 1".to_string()),
+                                                ).await {
+                                                    Ok(_) => Ok(0), // GNOME Shell responsive, assume active
+                                                    Err(e6) => {
+                                                        log::debug!("GNOME Shell check failed: {}", e6);
+                                                        Err(anyhow::anyhow!("All idle detection methods failed"))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Properly create and query Mutter Idle Monitor
+    async fn get_mutter_idle_time(connection: &zbus::Connection) -> Result<u32> {
+        // First try the existing core monitor
         match connection.call_method(
-            Some("org.gnome.SessionManager"),
-            "/org/gnome/SessionManager/Presence",
-            Some("org.gnome.SessionManager.Presence"),
-            "GetIdleTime",
+            Some("org.gnome.Mutter.IdleMonitor"),
+            "/org/gnome/Mutter/IdleMonitor/Core",
+            Some("org.gnome.Mutter.IdleMonitor"),
+            "GetIdletime",
             &(),
         ).await {
             Ok(response) => {
-                let idle_time: u32 = response.body().deserialize()?;
-                Ok(idle_time / 1000) // Convert milliseconds to seconds
+                let idle_time: u64 = response.body().deserialize()?;
+                return Ok((idle_time / 1000) as u32);
             }
             Err(_) => {
-                // Fallback: try Screen Saver interface
+                // Core monitor doesn't exist, try to create one
                 match connection.call_method(
-                    Some("org.gnome.ScreenSaver"),
-                    "/org/gnome/ScreenSaver",
-                    Some("org.gnome.ScreenSaver"),
-                    "GetActiveTime",
+                    Some("org.gnome.Mutter.IdleMonitor"),
+                    "/org/gnome/Mutter/IdleMonitor/Core",
+                    Some("org.gnome.Mutter.IdleMonitor"),
+                    "CreateMonitor",
                     &(),
                 ).await {
-                    Ok(_response) => {
-                        // If screen saver is not active, assume recent activity
-                        Ok(0) // Consider it active if we can call this
+                    Ok(response) => {
+                        let monitor_path: String = response.body().deserialize()?;
+                        log::debug!("Created idle monitor at: {}", monitor_path);
+
+                        // Now query the created monitor
+                        match connection.call_method(
+                            Some("org.gnome.Mutter.IdleMonitor"),
+                            monitor_path.as_str(),
+                            Some("org.gnome.Mutter.IdleMonitor"),
+                            "GetIdletime",
+                            &(),
+                        ).await {
+                            Ok(response) => {
+                                let idle_time: u64 = response.body().deserialize()?;
+                                Ok((idle_time / 1000) as u32)
+                            }
+                            Err(e) => {
+                                log::debug!("Failed to query created monitor: {}", e);
+                                Err(anyhow::anyhow!("Created monitor query failed: {}", e))
+                            }
+                        }
                     }
-                    Err(e) => Err(anyhow::anyhow!("No suitable D-Bus interface found: {}", e))
+                    Err(e) => {
+                        log::debug!("Failed to create idle monitor: {}", e);
+                        Err(anyhow::anyhow!("Idle monitor creation failed: {}", e))
+                    }
                 }
             }
         }
@@ -198,15 +364,28 @@ impl App {
         // Load history and usage (load 30 sessions for display)
         self.history = self.database.get_recent_sessions(30).await.unwrap();
         self.usage = self.database.get_app_usage().await.unwrap();
-        self.daily_usage = self.database.get_daily_usage().await.unwrap();
-        self.weekly_usage = self.database.get_weekly_usage().await.unwrap();
-        self.monthly_usage = self.database.get_monthly_usage().await.unwrap();
-        self.current_history = self.history.clone();
+        self.current_history = self.database.get_daily_sessions().await.unwrap();
+
+        // Create hierarchical usage data from sessions for Detailed Stats
+        self.daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&self.current_history);
+        self.weekly_usage = self.daily_usage.clone();
+        self.monthly_usage = self.daily_usage.clone();
+
+        // Create flat usage data for Today's Activity Progress
+        self.flat_daily_usage = self.database.get_daily_usage().await.unwrap();
 
         eprintln!("Enabling raw mode...");
-        enable_raw_mode().unwrap();
+        if let Err(e) = enable_raw_mode() {
+            eprintln!("Failed to enable raw mode: {}. This may happen when running in environments without proper terminal support (e.g., SSH without pseudo-terminal, containers, etc.)", e);
+            return Err(anyhow::anyhow!("Terminal raw mode not supported: {}", e));
+        }
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture).unwrap();
+        if let Err(e) = execute!(stdout, EnterAlternateScreen, EnableMouseCapture) {
+            eprintln!("Failed to enter alternate screen: {}", e);
+            // Try to disable raw mode before returning error
+            let _ = disable_raw_mode();
+            return Err(anyhow::anyhow!("Failed to setup terminal: {}", e));
+        }
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).unwrap();
 
@@ -215,6 +394,10 @@ impl App {
 
         let mut last_data_refresh = Instant::now();
         let data_refresh_interval = Duration::from_secs(5); // Refresh dashboard data every 5 seconds for near real-time updates
+
+        let mut last_afk_check = Instant::now();
+        let afk_check_interval = Duration::from_secs(1); // Check AFK status every second
+        let afk_threshold = Duration::from_secs(300); // 5 minutes of idle = AFK
 
         loop {
             terminal.draw(|f| self.draw(f))?;
@@ -225,13 +408,66 @@ impl App {
                 break;
             }
 
-            // Check for app or window change
+            // Check for AFK status every second
+            if last_afk_check.elapsed() >= afk_check_interval {
+                let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
+                let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+                log::debug!("Idle duration: {} seconds, is_afk: {}", idle_duration.num_seconds(), is_currently_afk);
+
+                // If we have a current session, check if AFK state changed
+                if let Some(ref mut session) = self.current_session {
+                    let was_afk = session.is_afk.unwrap_or(false);
+
+                    // AFK state changed - end current session and start new one
+                    if was_afk != is_currently_afk {
+                        // Save the current session
+                        let mut old_session = self.current_session.take().unwrap();
+                        old_session.duration = Local::now().signed_duration_since(old_session.start_time).num_seconds();
+
+                        if let Err(e) = self.database.insert_session(&old_session).await {
+                            log::error!("Failed to save session on AFK state change: {}", e);
+                        } else {
+                            log::info!("Session saved on AFK state change: {} -> is_afk={}", old_session.app_name, is_currently_afk);
+                        }
+
+                        // Start new session with updated AFK state
+                        if is_currently_afk {
+                            // Starting AFK session
+                            self.switch_app("AFK".to_string()).await?;
+                            if let Some(ref mut new_session) = self.current_session {
+                                new_session.is_afk = Some(true);
+                            }
+                        } else {
+                            // Returning from AFK - get the actual active app
+                            if let Ok(active_app) = self.monitor.get_active_app_async().await {
+                                self.switch_app(active_app.clone()).await?;
+                                if let Some(ref mut new_session) = self.current_session {
+                                    new_session.is_afk = Some(false);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                last_afk_check = Instant::now();
+            }
+
+            // Check for app or window change (but not if we're AFK)
             if let Ok(active_app) = self.monitor.get_active_app_async().await {
                 let active_window = self.monitor.get_active_window_name_async().await.ok();
-                if active_app != self.current_app || active_window != self.current_window {
+                let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
+                let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+
+                // Only track app changes if not AFK
+                if !is_currently_afk && (active_app != self.current_app || active_window != self.current_window) {
                     self.switch_app(active_app.clone()).await?;
                     self.current_app = active_app;
                     self.current_window = active_window;
+
+                    // Mark new session as not AFK
+                    if let Some(ref mut session) = self.current_session {
+                        session.is_afk = Some(false);
+                    }
                 }
             }
 
@@ -475,9 +711,6 @@ impl App {
             if last_data_refresh.elapsed() >= data_refresh_interval {
                 self.history = self.database.get_recent_sessions(30).await.unwrap_or_default();
                 self.usage = self.database.get_app_usage().await.unwrap_or_default();
-                self.daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
-                self.weekly_usage = self.database.get_weekly_usage().await.unwrap_or_default();
-                self.monthly_usage = self.database.get_monthly_usage().await.unwrap_or_default();
 
                 // Update current_history based on current view mode
                 if let AppState::Dashboard { ref view_mode } = self.state {
@@ -486,6 +719,14 @@ impl App {
                         ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
                         ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
                     };
+
+                    // Create hierarchical usage data from current_history for Detailed Stats
+                    self.daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&self.current_history);
+                    self.weekly_usage = self.daily_usage.clone();
+                    self.monthly_usage = self.daily_usage.clone();
+
+                    // Create flat usage data for Today's Activity Progress
+                    self.flat_daily_usage = self.database.get_daily_usage().await.unwrap_or_default();
                 }
 
                 // Update current session duration in history for real-time display
@@ -520,8 +761,13 @@ impl App {
             }
         }
 
-        disable_raw_mode().unwrap();
-        execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+        // Clean up terminal state
+        if let Err(e) = disable_raw_mode() {
+            log::warn!("Failed to disable raw mode: {}", e);
+        }
+        if let Err(e) = execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture) {
+            log::warn!("Failed to leave alternate screen: {}", e);
+        }
         Ok(())
     }
 
@@ -762,70 +1008,41 @@ impl App {
     async fn refresh_all_data(&mut self) -> Result<()> {
         // Refresh ALL usage data
         self.usage = self.database.get_app_usage().await?;
-        self.daily_usage = self.database.get_daily_usage().await?;
-        self.weekly_usage = self.database.get_weekly_usage().await?;
-        self.monthly_usage = self.database.get_monthly_usage().await?;
-        self.history = self.database.get_recent_sessions(30).await?;
 
-        // Update current_history based on current view mode
+        // Update current_history based on current view mode FIRST
         self.current_history = match &self.current_view_mode {
             ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
             ViewMode::Weekly => self.database.get_weekly_sessions().await.unwrap_or_default(),
             ViewMode::Monthly => self.database.get_monthly_sessions().await.unwrap_or_default(),
         };
+
+        // Create hierarchical usage data from sessions using hierarchical module
+        self.daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&self.current_history);
+        self.weekly_usage = self.daily_usage.clone(); // Will be replaced based on view mode
+        self.monthly_usage = self.daily_usage.clone(); // Will be replaced based on view mode
+
+        // Create flat usage data for Today's Activity Progress
+        self.flat_daily_usage = self.database.get_daily_usage().await?;
+
+        self.history = self.database.get_recent_sessions(30).await?;
         Ok(())
     }
 
     fn load_breakdown_data_from_history(&mut self) {
-        // Aggregate breakdown data from current_history (which is already filtered by view mode)
+        // Use hierarchical module to create all breakdown data from current_history
+        self.browser_breakdown = crate::ui::hierarchical::create_browser_breakdown(&self.current_history);
+        self.project_breakdown = crate::ui::hierarchical::create_project_breakdown(&self.current_history);
+        self.file_breakdown = crate::ui::hierarchical::create_file_breakdown(&self.current_history);
+        self.terminal_breakdown = crate::ui::hierarchical::create_terminal_breakdown(&self.current_history);
 
-        // Browser breakdown
-        let mut browser_map: BTreeMap<String, i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let Some(url) = &session.browser_url {
-                // Extract domain from URL
-                let domain = url.split('/').nth(2).unwrap_or(url).to_string();
-                *browser_map.entry(domain).or_insert(0) += session.duration;
-            }
-        }
-        self.browser_breakdown = browser_map.into_iter().collect();
-        self.browser_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Project breakdown
-        let mut project_map: BTreeMap<String, i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let Some(project) = &session.terminal_project_name {
-                *project_map.entry(project.clone()).or_insert(0) += session.duration;
-            } else if let Some(project) = &session.ide_project_name {
-                *project_map.entry(project.clone()).or_insert(0) += session.duration;
-            }
-        }
-        self.project_breakdown = project_map.into_iter().collect();
-        self.project_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // File breakdown
-        let mut file_map: BTreeMap<(String, String), i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let (Some(filename), Some(language)) = (&session.editor_filename, &session.editor_language) {
-                *file_map.entry((filename.clone(), language.clone())).or_insert(0) += session.duration;
-            }
-        }
-        self.file_breakdown = file_map.into_iter().map(|((f, l), d)| (f, l, d)).collect();
-        self.file_breakdown.sort_by(|a, b| b.2.cmp(&a.2));
-
-        // Terminal breakdown
-        let mut terminal_map: BTreeMap<String, i64> = BTreeMap::new();
-        for session in &self.current_history {
-            if let Some(dir) = &session.terminal_directory {
-                *terminal_map.entry(dir.clone()).or_insert(0) += session.duration;
-            }
-        }
-        self.terminal_breakdown = terminal_map.into_iter().collect();
-        self.terminal_breakdown.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Category breakdown
+        // Category breakdown - exclude AFK sessions
         let mut category_map: BTreeMap<String, i64> = BTreeMap::new();
         for session in &self.current_history {
+            // Skip AFK sessions
+            if session.is_afk.unwrap_or(false) {
+                continue;
+            }
+
             if let Some(category) = &session.category {
                 *category_map.entry(category.clone()).or_insert(0) += session.duration;
             }

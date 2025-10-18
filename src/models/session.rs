@@ -40,4 +40,7 @@ pub struct Session {
     // Metadata
     pub parsed_data: Option<sqlx::types::JsonValue>,
     pub parsing_success: Option<bool>,
+
+    // AFK tracking
+    pub is_afk: Option<bool>,
 }

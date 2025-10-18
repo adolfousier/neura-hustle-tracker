@@ -440,18 +440,17 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_get_active_app_async() {
+    async fn test_get_active_window_info_async() {
         let monitor = AppMonitor::new();
         // Note: This test may fail if no active window is available
-        let app = monitor.get_active_app_async().await.unwrap_or_else(|_| "test".to_string());
-        assert!(!app.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_get_active_window_name_async() {
-        let monitor = AppMonitor::new();
-        // Note: This test may fail if no active window is available
-        let window_name = monitor.get_active_window_name_async().await.unwrap_or_else(|_| "test".to_string());
-        assert!(!window_name.is_empty());
+        match monitor.get_active_window_info_async().await {
+            Ok((app, window_title)) => {
+                assert!(!app.is_empty());
+                // window_title can be None, which is fine
+            }
+            Err(_) => {
+                // Test passes if method exists and can be called, even if it fails due to no active window
+            }
+        }
     }
 }

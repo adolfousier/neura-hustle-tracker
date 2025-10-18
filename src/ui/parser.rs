@@ -222,34 +222,219 @@ fn detect_service(title: &str) -> Option<String> {
 }
 
 /// Parse terminal window title
-/// Pattern: "username@hostname: /directory/path"
+/// Handles multiple patterns: "username@hostname: /directory/path", tmux variants, and platform differences
 fn parse_terminal(window_name: &str, parsed: &mut ParsedSessionData) {
-    // Pattern: username@hostname: /path
-    if let Some(at_pos) = window_name.find('@') {
-        let username = window_name[..at_pos].trim();
+    // First, check for tmux patterns and extract tmux information
+    let (cleaned_title, tmux_info) = extract_tmux_info(window_name);
+
+    // Set tmux information if found
+    if let Some((window_name, pane_count)) = tmux_info {
+        parsed.tmux_window_name = Some(window_name);
+        parsed.tmux_pane_count = pane_count;
+        parsed.terminal_multiplexer = Some("tmux".to_string());
+    }
+
+    // Parse the cleaned title (with tmux info removed) for user/host/directory
+    if let Some(at_pos) = cleaned_title.find('@') {
+        let username = cleaned_title[..at_pos].trim();
         parsed.terminal_username = Some(username.to_string());
 
-        if let Some(colon_pos) = window_name.find(':') {
-            let hostname = window_name[at_pos + 1..colon_pos].trim();
+        if let Some(colon_pos) = cleaned_title.find(':') {
+            let hostname = cleaned_title[at_pos + 1..colon_pos].trim();
             parsed.terminal_hostname = Some(hostname.to_string());
 
-            let directory = window_name[colon_pos + 1..].trim();
-            parsed.terminal_directory = Some(directory.to_string());
+            let directory_raw = cleaned_title[colon_pos + 1..].trim();
 
-            // Extract project name from directory
-            parsed.terminal_project_name = extract_project_name(directory);
+            // Expand tilde to home directory
+            let directory = expand_tilde(directory_raw);
+            parsed.terminal_directory = Some(directory.clone());
+
+            // Extract project name from expanded directory
+            parsed.terminal_project_name = extract_project_name(&directory);
+        }
+    } else {
+        // Fallback: try to extract directory info even without user@host format
+        // Look for common patterns like "/path/to/dir" or "~/path"
+        if let Some(directory_raw) = extract_directory_fallback(&cleaned_title) {
+            let directory = expand_tilde(&directory_raw);
+            parsed.terminal_directory = Some(directory.clone());
+            parsed.terminal_project_name = extract_project_name(&directory);
         }
     }
 }
 
-/// Extract project name from directory path
+/// Extract tmux information from terminal title
+/// Returns (cleaned_title, tmux_info) where tmux_info is Some((window_name, pane_count))
+fn extract_tmux_info(title: &str) -> (String, Option<(String, Option<i32>)>) {
+    // Common tmux patterns:
+    // "tmux: window_name - user@host: ~/dir"
+    // "[tmux] window_name | user@host: ~/dir"
+    // "user@host: ~/dir - tmux (window_name)"
+    // "window_name - tmux"
+
+    let title_lower = title.to_lowercase();
+
+    // Pattern 1: "tmux: window_name"
+    if let Some(tmux_pos) = title_lower.find("tmux:") {
+        let after_tmux = &title[tmux_pos + 5..].trim();
+        if let Some(dash_pos) = after_tmux.find(" - ") {
+            let window_name = after_tmux[..dash_pos].trim().to_string();
+            let remaining = &title[tmux_pos + 5 + dash_pos + 3..].trim();
+            let prefix = title[..tmux_pos].trim();
+            let cleaned = if prefix.is_empty() {
+                remaining.to_string()
+            } else {
+                format!("{} {}", prefix, remaining)
+            };
+            return (cleaned.trim().to_string(), Some((window_name, None)));
+        }
+    }
+
+    // Pattern 2: "[tmux] window_name"
+    if let Some(start) = title_lower.find("[tmux]") {
+        let after_bracket = &title[start + 6..].trim();
+        if let Some(end) = after_bracket.find(" | ") {
+            let window_name = after_bracket[..end].trim().to_string();
+            let cleaned = title[..start].trim().to_string() + &title[start + 6 + end + 3..];
+            return (cleaned, Some((window_name, None)));
+        }
+    }
+
+    // Pattern 3: " - tmux (window_name)"
+    if let Some(tmux_start) = title_lower.find(" - tmux (") {
+        if let Some(close_paren) = title[tmux_start..].find(')') {
+            let window_name_start = tmux_start + 9; // Skip " - tmux ("
+            let window_name = title[window_name_start..tmux_start + close_paren].trim().to_string();
+            let cleaned = title[..tmux_start].trim().to_string();
+            return (cleaned, Some((window_name, None)));
+        }
+    }
+
+    // Pattern 4: Simple "window_name - tmux"
+    if let Some(tmux_pos) = title_lower.find(" - tmux") {
+        let window_name = title[..tmux_pos].trim().to_string();
+        return ("".to_string(), Some((window_name, None)));
+    }
+
+    // Pattern 5: Alacritty/tmux common format: "tmux [window_name] - ..."
+    if let Some(bracket_start) = title_lower.find("tmux [") {
+        if let Some(bracket_end) = title[bracket_start..].find(']') {
+            let window_name = title[bracket_start + 6..bracket_start + bracket_end].trim().to_string();
+            let cleaned = title[..bracket_start].trim().to_string() + &title[bracket_start + bracket_end + 1..];
+            return (cleaned.trim().to_string(), Some((window_name, None)));
+        }
+    }
+
+    // Pattern 6: Look for tmux in title and extract window name from context
+    if title_lower.contains("tmux") {
+        // Try to extract window name from common patterns
+        if let Some(dash_pos) = title.find(" - ") {
+            let before_dash = title[..dash_pos].trim();
+            if before_dash.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') && before_dash.len() >= 2 {
+                // Looks like a window name before dash
+                let after_dash = title[dash_pos + 3..].trim();
+                if after_dash.to_lowercase().contains("tmux") || after_dash.to_lowercase().contains("alacritty") {
+                    return (after_dash.to_string(), Some((before_dash.to_string(), None)));
+                }
+            }
+        }
+    }
+
+    // No tmux info found
+    (title.to_string(), None)
+}
+
+/// Expand tilde (~) to home directory
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with('~') {
+        if let Ok(home) = std::env::var("HOME") {
+            if path == "~" {
+                return home;
+            } else if path.starts_with("~/") {
+                return home + &path[1..];
+            }
+        }
+    }
+    path.to_string()
+}
+
+/// Extract directory information as fallback when user@host: format is not found
+fn extract_directory_fallback(title: &str) -> Option<String> {
+    // Look for paths starting with / or ~
+    if let Some(slash_pos) = title.find('/') {
+        let potential_path = &title[slash_pos..];
+        // Make sure it looks like a path (has multiple segments or common directories)
+        if potential_path.contains('/') || potential_path.starts_with("~/") {
+            return Some(potential_path.trim().to_string());
+        }
+    }
+
+    // Look for ~ followed by path
+    if let Some(tilde_pos) = title.find('~') {
+        let after_tilde = &title[tilde_pos..];
+        if after_tilde.len() > 1 && (after_tilde.starts_with("~/") || after_tilde.chars().nth(1).map_or(false, |c| c.is_alphabetic())) {
+            return Some(after_tilde.trim().to_string());
+        }
+    }
+
+    None
+}
+
+/// Extract project name from directory path with improved heuristics
 fn extract_project_name(path: &str) -> Option<String> {
-    // Common patterns: /srv/rs/PROJECT, /home/user/projects/PROJECT, etc.
+    // Handle tilde specially (even if HOME is not set)
+    if path == "~" {
+        return Some("Home".to_string());
+    }
+
+    // Handle home directory specially
+    if let Ok(home) = std::env::var("HOME") {
+        if path == home {
+            return Some("Home".to_string());
+        }
+        if path.starts_with(&format!("{}/", home)) {
+            // For deeper paths like ~/projects/myapp, extract the project name (myapp)
+            // But for simple paths like ~/Documents, use the directory name (Documents)
+            let after_home = &path[home.len() + 1..];
+            let parts: Vec<&str> = after_home.split('/').collect();
+
+            // If we have multiple parts (e.g., projects/myapp), prefer the last meaningful part
+            for part in parts.iter().rev() {
+                if !part.is_empty() && *part != "." && *part != ".." && part.len() >= 2 {
+                    return Some(part.to_string());
+                }
+            }
+
+            // Fallback to first directory after home
+            if let Some(first_dir) = parts.first() {
+                if !first_dir.is_empty() {
+                    return Some(first_dir.to_string());
+                }
+            }
+        }
+    }
+
+    // Standard project extraction from path
     let parts: Vec<&str> = path.split('/').collect();
 
-    // Get last non-empty component
+    // Get last non-empty component, skipping common non-project directories
+    let skip_dirs = ["bin", "usr", "etc", "var", "tmp", "dev", "proc", "sys", "home", "root"];
+
     for part in parts.iter().rev() {
-        if !part.is_empty() && *part != "." && *part != ".." {
+        let part_lower = part.to_lowercase();
+        if !part.is_empty() && *part != "." && *part != ".." && !skip_dirs.contains(&part_lower.as_str()) {
+            // Additional heuristics: prefer directories that look like projects
+            if part.chars().next().map_or(false, |c| c.is_alphabetic()) && part.len() >= 2 {
+                return Some(part.to_string());
+            }
+        }
+    }
+
+    // If all parts are in skip_dirs, return None
+    // Fallback: if we have any valid directory component (not in skip_dirs)
+    for part in parts.iter().rev() {
+        let part_lower = part.to_lowercase();
+        if !part.is_empty() && *part != "." && *part != ".." && !skip_dirs.contains(&part_lower.as_str()) {
             return Some(part.to_string());
         }
     }
