@@ -1,13 +1,11 @@
 mod config;
-mod database;
+mod daemon;
 mod models;
-mod tracker;
-mod active_window;
 
 use anyhow::Result;
-use crate::utils::active_window::daemon::Daemon;
+use crate::daemon::active_window::daemon::Daemon;
+use crate::daemon::database::connection::Database;
 use crate::config::settings::Settings;
-use crate::database::connection::Database;
 use dotenvy::dotenv;
 use std::env;
 use std::fs::OpenOptions;

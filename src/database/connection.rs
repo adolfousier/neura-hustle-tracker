@@ -236,33 +236,54 @@ impl Database {
     }
 
     pub async fn get_daily_usage(&self) -> Result<Vec<(String, i64)>> {
+        // Get local midnight (start of today in local timezone)
+        let now = chrono::Local::now();
+        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
+
         let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day' GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 GROUP BY app_name ORDER BY total_duration DESC"
         )
+        .bind(today_start)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
     }
 
     pub async fn get_weekly_usage(&self) -> Result<Vec<(String, i64)>> {
+        // Get local midnight 7 days ago (start of week in local timezone)
+        let now = chrono::Local::now();
+        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
+        let week_start = today_start - chrono::Duration::days(6);
+
         let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '6 days' GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 GROUP BY app_name ORDER BY total_duration DESC"
         )
+        .bind(week_start)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
     }
 
     pub async fn get_monthly_usage(&self) -> Result<Vec<(String, i64)>> {
+        // Get local midnight 30 days ago (start of month in local timezone)
+        let now = chrono::Local::now();
+        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
+        let month_start = today_start - chrono::Duration::days(29);
+
         let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '29 days' GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 GROUP BY app_name ORDER BY total_duration DESC"
         )
+        .bind(month_start)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
     }
 
     pub async fn get_daily_sessions(&self) -> Result<Vec<Session>> {
+        // Get local midnight (start of today in local timezone)
+        let now = chrono::Local::now();
+        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
+
         let rows = sqlx::query_as::<_, Session>(
             r#"
             SELECT
@@ -274,17 +295,22 @@ impl Database {
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success
             FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP)
-            AND start_time < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day'
+            WHERE start_time >= $1
             ORDER BY start_time DESC
             "#,
         )
+        .bind(today_start)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
     }
 
     pub async fn get_weekly_sessions(&self) -> Result<Vec<Session>> {
+        // Get local midnight 7 days ago (start of week in local timezone)
+        let now = chrono::Local::now();
+        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
+        let week_start = today_start - chrono::Duration::days(6);
+
         let rows = sqlx::query_as::<_, Session>(
             r#"
             SELECT
@@ -296,16 +322,22 @@ impl Database {
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success
             FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '6 days'
+            WHERE start_time >= $1
             ORDER BY start_time DESC
             "#,
         )
+        .bind(week_start)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)
     }
 
     pub async fn get_monthly_sessions(&self) -> Result<Vec<Session>> {
+        // Get local midnight 30 days ago (start of month in local timezone)
+        let now = chrono::Local::now();
+        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
+        let month_start = today_start - chrono::Duration::days(29);
+
         let rows = sqlx::query_as::<_, Session>(
             r#"
             SELECT
@@ -317,10 +349,11 @@ impl Database {
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success
             FROM sessions
-            WHERE start_time >= date_trunc('day', CURRENT_TIMESTAMP) - INTERVAL '29 days'
+            WHERE start_time >= $1
             ORDER BY start_time DESC
             "#,
         )
+        .bind(month_start)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows)

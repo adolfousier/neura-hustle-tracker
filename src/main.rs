@@ -3,7 +3,6 @@ mod database;
 mod models;
 mod tracker;
 mod ui;
-mod utils;
 
 use anyhow::Result;
 use crate::config::settings::Settings;

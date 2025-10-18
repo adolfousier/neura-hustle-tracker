@@ -1,6 +1,6 @@
 [package]
 name = "neura_hustle_tracker"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 
 [[bin]]
@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "neura_hustle_daemon"
-path = "src/utils/daemon_main.rs"
+path = "src/daemon_main.rs"
 
 [dependencies]
 active-win-pos-rs = "0.9.1"
