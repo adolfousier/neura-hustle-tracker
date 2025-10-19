@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
     log::info!("Connecting to database...");
     let database = Database::new(&settings.database_url).await.unwrap();
     log::info!("Connected successfully. Creating tables...");
-    database.create_table().await.unwrap();
+
     log::info!("Tables created. Starting application...");
 
     let mut app = App::new(database);

@@ -10,121 +10,16 @@ pub struct Database {
 impl Database {
     pub async fn new(database_url: &str) -> Result<Self> {
         let pool = PgPool::connect(database_url).await?;
+
+        // Run migrations
+        sqlx::migrate!("src/database/migrations")
+            .run(&pool)
+            .await?;
+
         Ok(Self { pool })
     }
 
-    pub async fn create_table(&self) -> Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS sessions (
-                id SERIAL PRIMARY KEY,
-                app_name TEXT NOT NULL,
-                window_name TEXT,
-                start_time TIMESTAMP WITH TIME ZONE NOT NULL,
-                duration BIGINT NOT NULL,
-                category TEXT
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
 
-        // Add window_name column if it doesn't exist (for migration)
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS window_name TEXT
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Add category column if it doesn't exist (for migration)
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS category TEXT
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Enhanced tracking columns - Browser
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS browser_url TEXT,
-            ADD COLUMN IF NOT EXISTS browser_page_title TEXT,
-            ADD COLUMN IF NOT EXISTS browser_notification_count INTEGER
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Enhanced tracking columns - Terminal
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS terminal_username TEXT,
-            ADD COLUMN IF NOT EXISTS terminal_hostname TEXT,
-            ADD COLUMN IF NOT EXISTS terminal_directory TEXT,
-            ADD COLUMN IF NOT EXISTS terminal_project_name TEXT
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Enhanced tracking columns - Editor
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS editor_filename TEXT,
-            ADD COLUMN IF NOT EXISTS editor_filepath TEXT,
-            ADD COLUMN IF NOT EXISTS editor_project_path TEXT,
-            ADD COLUMN IF NOT EXISTS editor_language TEXT
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Enhanced tracking columns - Multiplexer
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tmux_window_name TEXT,
-            ADD COLUMN IF NOT EXISTS tmux_pane_count INTEGER,
-            ADD COLUMN IF NOT EXISTS terminal_multiplexer TEXT
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Enhanced tracking columns - IDE
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ide_project_name TEXT,
-            ADD COLUMN IF NOT EXISTS ide_file_open TEXT,
-            ADD COLUMN IF NOT EXISTS ide_workspace TEXT
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // Metadata columns
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS parsed_data JSONB,
-            ADD COLUMN IF NOT EXISTS parsing_success BOOLEAN DEFAULT TRUE
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        // AFK tracking columns
-        sqlx::query(
-            r#"
-            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_afk BOOLEAN DEFAULT FALSE
-            "#,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
 
     pub async fn insert_session(&self, session: &Session) -> Result<i32> {
         let id: (i32,) = sqlx::query_as(
@@ -132,19 +27,28 @@ impl Database {
             INSERT INTO sessions (
                 app_name, window_name, start_time, duration, category,
                 browser_url, browser_page_title, browser_notification_count,
+                browser_page_title_renamed, browser_page_title_category,
                 terminal_username, terminal_hostname, terminal_directory, terminal_project_name,
+                terminal_directory_renamed, terminal_directory_category,
                 editor_filename, editor_filepath, editor_project_path, editor_language,
+                editor_filename_renamed, editor_filename_category,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
+                tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success, is_afk
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8,
-                $9, $10, $11, $12,
-                $13, $14, $15, $16,
-                $17, $18, $19,
-                $20, $21, $22,
-                $23, $24, $25
+                $9, $10,
+                $11, $12, $13, $14,
+                $15, $16,
+                $17, $18, $19, $20,
+                $21, $22,
+                $23, $24, $25,
+                $26, $27,
+                $28, $29, $30,
+                $31, $32,
+                $33
             ) RETURNING id
             "#,
         )
@@ -157,20 +61,28 @@ impl Database {
         .bind(&session.browser_url)
         .bind(&session.browser_page_title)
         .bind(session.browser_notification_count)
+        .bind(&session.browser_page_title_renamed)
+        .bind(&session.browser_page_title_category)
         // Terminal
         .bind(&session.terminal_username)
         .bind(&session.terminal_hostname)
         .bind(&session.terminal_directory)
         .bind(&session.terminal_project_name)
+        .bind(&session.terminal_directory_renamed)
+        .bind(&session.terminal_directory_category)
         // Editor
         .bind(&session.editor_filename)
         .bind(&session.editor_filepath)
         .bind(&session.editor_project_path)
         .bind(&session.editor_language)
+        .bind(&session.editor_filename_renamed)
+        .bind(&session.editor_filename_category)
         // Multiplexer
         .bind(&session.tmux_window_name)
         .bind(session.tmux_pane_count)
         .bind(&session.terminal_multiplexer)
+        .bind(&session.tmux_window_name_renamed)
+        .bind(&session.tmux_window_name_category)
         // IDE
         .bind(&session.ide_project_name)
         .bind(&session.ide_file_open)
@@ -191,9 +103,13 @@ impl Database {
             SELECT
                 id, app_name, window_name, start_time, duration, category,
                 browser_url, browser_page_title, browser_notification_count,
+                browser_page_title_renamed, browser_page_title_category,
                 terminal_username, terminal_hostname, terminal_directory, terminal_project_name,
+                terminal_directory_renamed, terminal_directory_category,
                 editor_filename, editor_filepath, editor_project_path, editor_language,
+                editor_filename_renamed, editor_filename_category,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
+                tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success, is_afk
             FROM sessions
@@ -235,6 +151,87 @@ impl Database {
         Ok(())
     }
 
+    pub async fn rename_browser_page_title(&self, old_title: &str, new_title: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET browser_page_title_renamed = $1 WHERE browser_page_title = $2")
+            .bind(new_title)
+            .bind(old_title)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn categorize_browser_page_title(&self, title: &str, category: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET browser_page_title_category = $1 WHERE browser_page_title = $2")
+            .bind(category)
+            .bind(title)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn rename_terminal_directory(&self, old_dir: &str, new_dir: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET terminal_directory_renamed = $1 WHERE terminal_directory = $2")
+            .bind(new_dir)
+            .bind(old_dir)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn categorize_terminal_directory(&self, dir: &str, category: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET terminal_directory_category = $1 WHERE terminal_directory = $2")
+            .bind(category)
+            .bind(dir)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn rename_editor_filename(&self, old_filename: &str, new_filename: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET editor_filename_renamed = $1 WHERE editor_filename = $2")
+            .bind(new_filename)
+            .bind(old_filename)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn categorize_editor_filename(&self, filename: &str, category: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET editor_filename_category = $1 WHERE editor_filename = $2")
+            .bind(category)
+            .bind(filename)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn rename_tmux_window_name(&self, old_name: &str, new_name: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET tmux_window_name_renamed = $1 WHERE tmux_window_name = $2")
+            .bind(new_name)
+            .bind(old_name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn categorize_tmux_window_name(&self, name: &str, category: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET tmux_window_name_category = $1 WHERE tmux_window_name = $2")
+            .bind(category)
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_app_category_by_name(&self, app_name: &str) -> Result<Option<String>> {
+        let category: Option<(String,)> = sqlx::query_as("SELECT category FROM sessions WHERE app_name = $1 AND category IS NOT NULL LIMIT 1")
+            .bind(app_name)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(category.map(|(c,)| c))
+    }
+
+
     pub async fn fix_old_categories(&self) -> Result<()> {
         // Fix any sessions with old category names that should be Development
         sqlx::query("UPDATE sessions SET category = $1 WHERE category IN ($2, $3)")
@@ -260,36 +257,6 @@ impl Database {
         Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
     }
 
-    pub async fn get_weekly_usage(&self) -> Result<Vec<(String, i64)>> {
-        // Get local midnight 7 days ago (start of week in local timezone)
-        let now = chrono::Local::now();
-        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
-        let week_start = today_start - chrono::Duration::days(6);
-
-        let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 AND is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC"
-        )
-        .bind(week_start)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
-    }
-
-    pub async fn get_monthly_usage(&self) -> Result<Vec<(String, i64)>> {
-        // Get local midnight 30 days ago (start of month in local timezone)
-        let now = chrono::Local::now();
-        let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
-        let month_start = today_start - chrono::Duration::days(29);
-
-        let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 AND is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC"
-        )
-        .bind(month_start)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows.into_iter().map(|(app_name, total_duration)| (app_name, total_duration.unwrap_or(0))).collect())
-    }
-
     pub async fn get_daily_sessions(&self) -> Result<Vec<Session>> {
         // Get local midnight (start of today in local timezone)
         let now = chrono::Local::now();
@@ -300,9 +267,13 @@ impl Database {
             SELECT
                 id, app_name, window_name, start_time, duration, category,
                 browser_url, browser_page_title, browser_notification_count,
+                browser_page_title_renamed, browser_page_title_category,
                 terminal_username, terminal_hostname, terminal_directory, terminal_project_name,
+                terminal_directory_renamed, terminal_directory_category,
                 editor_filename, editor_filepath, editor_project_path, editor_language,
+                editor_filename_renamed, editor_filename_category,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
+                tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success, is_afk
             FROM sessions
@@ -327,9 +298,13 @@ impl Database {
             SELECT
                 id, app_name, window_name, start_time, duration, category,
                 browser_url, browser_page_title, browser_notification_count,
+                browser_page_title_renamed, browser_page_title_category,
                 terminal_username, terminal_hostname, terminal_directory, terminal_project_name,
+                terminal_directory_renamed, terminal_directory_category,
                 editor_filename, editor_filepath, editor_project_path, editor_language,
+                editor_filename_renamed, editor_filename_category,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
+                tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success, is_afk
             FROM sessions
@@ -354,9 +329,13 @@ impl Database {
             SELECT
                 id, app_name, window_name, start_time, duration, category,
                 browser_url, browser_page_title, browser_notification_count,
+                browser_page_title_renamed, browser_page_title_category,
                 terminal_username, terminal_hostname, terminal_directory, terminal_project_name,
+                terminal_directory_renamed, terminal_directory_category,
                 editor_filename, editor_filepath, editor_project_path, editor_language,
+                editor_filename_renamed, editor_filename_category,
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
+                tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
                 parsed_data, parsing_success, is_afk
             FROM sessions

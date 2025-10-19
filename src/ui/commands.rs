@@ -47,35 +47,75 @@ pub fn get_category_options() -> Vec<String> {
 /// Rename app command - renames an app while preserving its category
 pub async fn execute_rename_app(
     ctx: &mut CommandContext<'_>,
-    old_name: &str,
+    unique_id: &str,
     new_name: &str,
-    original_category: &str,
 ) -> Result<CommandResult> {
     if new_name.is_empty() {
         return Ok(CommandResult::success_no_refresh());
     }
 
-    // Rename app in database while preserving category
-    if let Err(e) = ctx.database.rename_app_with_category(old_name, new_name, original_category).await {
-        let error_msg = format!("[{}] Failed to rename app: {}", Local::now().format("%H:%M:%S"), e);
+    let (id_type, original_value) = unique_id.split_once(':').unwrap_or(("", unique_id));
+
+    let result = match id_type {
+        "app_name" => {
+            // Get the original category before renaming
+            let original_category = ctx.database.get_app_category_by_name(original_value).await?.unwrap_or_else(|| "Other".to_string());
+            ctx.database.rename_app_with_category(original_value, new_name, &original_category).await
+        },
+        "browser_page_title" => ctx.database.rename_browser_page_title(original_value, new_name).await,
+        "terminal_directory" => ctx.database.rename_terminal_directory(original_value, new_name).await,
+        "editor_filename" => ctx.database.rename_editor_filename(original_value, new_name).await,
+        "tmux_window_name" => ctx.database.rename_tmux_window_name(original_value, new_name).await,
+        _ => {
+            // Fallback for window_name or unknown types, treat as app_name
+            let original_category = ctx.database.get_app_category_by_name(original_value).await?.unwrap_or_else(|| "Other".to_string());
+            ctx.database.rename_app_with_category(original_value, new_name, &original_category).await
+        }
+    };
+
+    if let Err(e) = result {
+        let error_msg = format!("[{}] Failed to rename {}: {}", Local::now().format("%H:%M:%S"), unique_id, e);
         ctx.logs.push(error_msg.clone());
         return Ok(CommandResult::success_no_refresh());
     }
 
     // Update current session if it matches
     if let Some(session) = ctx.current_session {
-        if session.app_name == old_name {
-            session.app_name = new_name.to_string();
-            session.category = Some(original_category.to_string());
+        match id_type {
+            "app_name" => {
+                if session.app_name == original_value {
+                    session.app_name = new_name.to_string();
+                }
+            },
+            "browser_page_title" => {
+                if session.browser_page_title.as_deref() == Some(original_value) {
+                    session.browser_page_title_renamed = Some(new_name.to_string());
+                }
+            },
+            "terminal_directory" => {
+                if session.terminal_directory.as_deref() == Some(original_value) {
+                    session.terminal_directory_renamed = Some(new_name.to_string());
+                }
+            },
+            "editor_filename" => {
+                if session.editor_filename.as_deref() == Some(original_value) {
+                    session.editor_filename_renamed = Some(new_name.to_string());
+                }
+            },
+            "tmux_window_name" => {
+                if session.tmux_window_name.as_deref() == Some(original_value) {
+                    session.tmux_window_name_renamed = Some(new_name.to_string());
+                }
+            },
+            _ => {},
         }
     }
 
     let success_msg = format!(
-        "[{}] Renamed '{}' to '{}' (preserved category: {})",
+        "[{}] Renamed '{}' to '{}'",
         Local::now().format("%H:%M:%S"),
-        old_name,
-        new_name,
-        original_category
+        original_value,
+        new_name
     );
     ctx.logs.push(success_msg.clone());
 
@@ -85,31 +125,66 @@ pub async fn execute_rename_app(
 /// Update app category command - applies a predefined or custom category to an app
 pub async fn execute_update_category(
     ctx: &mut CommandContext<'_>,
-    app_name: &str,
+    unique_id: &str,
     category: &str,
 ) -> Result<CommandResult> {
     if category.is_empty() {
         return Ok(CommandResult::success_no_refresh());
     }
 
-    // Apply category
-    if let Err(e) = ctx.database.update_app_category(app_name, category).await {
-        let error_msg = format!("[{}] Failed to update category: {}", Local::now().format("%H:%M:%S"), e);
+    let (id_type, original_value) = unique_id.split_once(':').unwrap_or(("", unique_id));
+
+    let result = match id_type {
+        "app_name" => ctx.database.update_app_category(original_value, category).await,
+        "browser_page_title" => ctx.database.categorize_browser_page_title(original_value, category).await,
+        "terminal_directory" => ctx.database.categorize_terminal_directory(original_value, category).await,
+        "editor_filename" => ctx.database.categorize_editor_filename(original_value, category).await,
+        "tmux_window_name" => ctx.database.categorize_tmux_window_name(original_value, category).await,
+        _ => ctx.database.update_app_category(original_value, category).await, // Fallback to app_name
+    };
+
+    if let Err(e) = result {
+        let error_msg = format!("[{}] Failed to update category for {}: {}", Local::now().format("%H:%M:%S"), unique_id, e);
         ctx.logs.push(error_msg.clone());
         return Ok(CommandResult::success_no_refresh());
     }
 
     // Update current session if it matches
     if let Some(session) = ctx.current_session {
-        if session.app_name == app_name {
-            session.category = Some(category.to_string());
+        match id_type {
+            "app_name" => {
+                if session.app_name == original_value {
+                    session.category = Some(category.to_string());
+                }
+            },
+            "browser_page_title" => {
+                if session.browser_page_title.as_deref() == Some(original_value) {
+                    session.browser_page_title_category = Some(category.to_string());
+                }
+            },
+            "terminal_directory" => {
+                if session.terminal_directory.as_deref() == Some(original_value) {
+                    session.terminal_directory_category = Some(category.to_string());
+                }
+            },
+            "editor_filename" => {
+                if session.editor_filename.as_deref() == Some(original_value) {
+                    session.editor_filename_category = Some(category.to_string());
+                }
+            },
+            "tmux_window_name" => {
+                if session.tmux_window_name.as_deref() == Some(original_value) {
+                    session.tmux_window_name_category = Some(category.to_string());
+                }
+            },
+            _ => {},
         }
     }
 
     let success_msg = format!(
         "[{}] Updated category for '{}' to '{}'",
         Local::now().format("%H:%M:%S"),
-        app_name,
+        original_value,
         category
     );
     ctx.logs.push(success_msg.clone());
@@ -120,7 +195,7 @@ pub async fn execute_update_category(
 /// Create and apply custom category command
 pub async fn execute_create_category(
     ctx: &mut CommandContext<'_>,
-    app_name: &str,
+    unique_id: &str,
     custom_category: &str,
 ) -> Result<CommandResult> {
     if custom_category.is_empty() {
@@ -128,24 +203,13 @@ pub async fn execute_create_category(
     }
 
     // Apply custom category
-    if let Err(e) = ctx.database.update_app_category(app_name, custom_category).await {
-        let error_msg = format!("[{}] Failed to create category: {}", Local::now().format("%H:%M:%S"), e);
-        ctx.logs.push(error_msg.clone());
-        return Ok(CommandResult::success_no_refresh());
-    }
-
-    // Update current session if it matches
-    if let Some(session) = ctx.current_session {
-        if session.app_name == app_name {
-            session.category = Some(custom_category.to_string());
-        }
-    }
+    execute_update_category(ctx, unique_id, custom_category).await?;
 
     let success_msg = format!(
         "[{}] Created and applied category '{}' for '{}'",
         Local::now().format("%H:%M:%S"),
         custom_category,
-        app_name
+        unique_id
     );
     ctx.logs.push(success_msg.clone());
 

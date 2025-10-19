@@ -1,6 +1,16 @@
 use std::collections::BTreeMap;
 use crate::models::session::Session;
 
+#[derive(Clone)]
+pub struct HierarchicalDisplayItem {
+    pub display_name: String,
+    pub unique_id: String, // This will be the key for database operations
+    pub duration: i64,
+    pub category: Option<String>, // To store the category for display
+    pub parent_app_name: Option<String>, // Parent app name for sub-entries
+    pub is_sub_entry: bool,
+}
+
 /// Extract project name from directory path with improved heuristics
 fn extract_project_name(path: &str) -> Option<String> {
     // Handle home directory specially
@@ -49,9 +59,9 @@ fn extract_project_name(path: &str) -> Option<String> {
 }
 /// Creates hierarchical usage data from sessions for display in stats
 /// Format: App entries with sub-entries indented with "  └─ "
-pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<(String, i64)> {
-    // Group sessions by app, then by window details
-    let mut app_map: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
+pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDisplayItem> {
+    // Group sessions by app, then by sub-entry unique ID, storing (duration, display_name, category)
+    let mut app_map: BTreeMap<String, BTreeMap<String, (i64, String, Option<String>)>> = BTreeMap::new();
 
     for session in sessions {
         // Skip AFK sessions
@@ -61,62 +71,76 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<(String, i64)> {
 
         let app_name = session.app_name.clone();
 
-        // Create meaningful sub-entry based on session data
-        let sub_entry = if let Some(page_title) = &session.browser_page_title {
-            // Browser: show page title
-            page_title.clone()
+        // Determine sub-entry unique ID, display name, and category
+        let (sub_entry_unique_id, sub_entry_display_name, sub_entry_category) = if let Some(page_title) = &session.browser_page_title {
+            let display = session.browser_page_title_renamed.as_ref().unwrap_or(page_title).clone();
+            (format!("browser_page_title:{}", page_title), display, session.browser_page_title_category.clone())
         } else if let Some(dir) = &session.terminal_directory {
-            // Terminal: show project name from directory
-            extract_project_name(dir).unwrap_or_else(|| dir.clone())
+            let original_project_name = extract_project_name(dir).unwrap_or_else(|| dir.clone());
+            let display = session.terminal_directory_renamed.as_ref().unwrap_or(&original_project_name).clone();
+            (format!("terminal_directory:{}", dir), display, session.terminal_directory_category.clone())
         } else if let Some(filename) = &session.editor_filename {
-            // Editor: show file
-            if let Some(lang) = &session.editor_language {
-                format!("{} ({})", filename, lang)
-            } else {
-                filename.clone()
-            }
+            let display = session.editor_filename_renamed.as_ref().unwrap_or(filename).clone();
+            (format!("editor_filename:{}", filename), display, session.editor_filename_category.clone())
         } else if let Some(tmux_window) = &session.tmux_window_name {
-            // Tmux: show window name
-            format!("tmux: {}", tmux_window)
+            let display = session.tmux_window_name_renamed.as_ref().unwrap_or(tmux_window).clone();
+            (format!("tmux_window_name:{}", tmux_window), display, session.tmux_window_name_category.clone())
         } else if let Some(window) = &session.window_name {
-            // Fallback: show window name
-            window.clone()
+            (format!("window_name:{}", window), window.clone(), None)
         } else {
-            // No sub-entry
-            String::new()
+            // Fallback for entries with no specific sub-entry data
+            (app_name.clone(), app_name.clone(), None)
         };
 
-        let app_sessions = app_map.entry(app_name).or_insert_with(BTreeMap::new);
-        if !sub_entry.is_empty() {
-            *app_sessions.entry(sub_entry).or_insert(0) += session.duration;
-        } else {
-            *app_sessions.entry("(general)".to_string()).or_insert(0) += session.duration;
+        let app_sessions = app_map.entry(app_name.clone()).or_insert_with(BTreeMap::new);
+
+        // If sub_entry_unique_id is the same as app_name, it's a general entry
+        if sub_entry_unique_id == app_name {
+            let (current_duration, _, _) = app_sessions.entry("(general)".to_string()).or_insert((0, "(general)".to_string(), None));
+            *current_duration += session.duration;
+        } else if !sub_entry_unique_id.is_empty() {
+            let (current_duration, _, _) = app_sessions.entry(sub_entry_unique_id).or_insert((0, sub_entry_display_name, sub_entry_category));
+            *current_duration += session.duration;
         }
     }
 
     // Flatten into hierarchical display format
-    let mut result: Vec<(String, i64)> = Vec::new();
+    let mut result: Vec<HierarchicalDisplayItem> = Vec::new();
 
     // Sort apps by total duration
     let mut app_totals: Vec<(String, i64)> = app_map.iter()
-        .map(|(app, sessions)| (app.clone(), sessions.values().sum()))
+        .map(|(app, sessions)| (app.clone(), sessions.values().map(|(dur, _, _)| dur).sum()))
         .collect();
     app_totals.sort_by(|a, b| b.1.cmp(&a.1));
 
     for (app_name, app_total) in app_totals {
         // Add app header
-        result.push((app_name.clone(), app_total));
+        result.push(HierarchicalDisplayItem {
+            parent_app_name: Some(app_name.clone()),
+            display_name: app_name.clone(),
+            unique_id: format!("app_name:{}", app_name),
+            duration: app_total,
+            category: None, // Main app category will be determined in render
+            is_sub_entry: false,
+        });
 
-        // Add sub-entries (top 3 by duration)
+        // Add sub-entries (top 2 by duration)
         if let Some(sessions) = app_map.get(&app_name) {
-            let mut session_list: Vec<(String, i64)> = sessions.iter()
-                .map(|(sub, dur)| (sub.clone(), *dur))
+            let mut session_list: Vec<(String, (i64, String, Option<String>))> = sessions.iter()
+                .map(|(sub_id, (dur, display, cat))| (sub_id.clone(), (*dur, display.clone(), cat.clone())))
                 .collect();
-            session_list.sort_by(|a, b| b.1.cmp(&a.1));
+            session_list.sort_by(|a, b| b.1.0.cmp(&a.1.0));
 
-            for (sub_entry, duration) in session_list.iter().take(2) {
-                if sub_entry != "(general)" {
-                    result.push((format!("{}", sub_entry), *duration));
+            for (sub_entry_id, (duration, display_name, category)) in session_list.iter().take(2) {
+                if sub_entry_id != "(general)" {
+                    result.push(HierarchicalDisplayItem {
+            parent_app_name: Some(app_name.clone()),
+                        display_name: format!("  {}", display_name),
+                        unique_id: sub_entry_id.clone(),
+                        duration: *duration,
+                        category: category.clone(),
+                        is_sub_entry: true,
+                    });
                 }
             }
         }

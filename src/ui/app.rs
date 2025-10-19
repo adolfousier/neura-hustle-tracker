@@ -19,6 +19,7 @@ use crate::database::connection::Database;
 use crate::models::session::Session;
 use crate::tracker::monitor::AppMonitor;
 use crate::ui::{commands::{self, CommandContext}, tracking};
+use crate::ui::hierarchical::HierarchicalDisplayItem;
 
 // Re-export ViewMode for other ui modules
 pub use crate::ui::tracking::ViewMode;
@@ -33,9 +34,9 @@ pub enum InputAction {
 pub enum AppState {
     Dashboard { view_mode: ViewMode },
     ViewingLogs,
-    SelectingApp { selected_index: usize },
-    SelectingCategory { selected_index: usize },
-    CategoryMenu { app_name: String, selected_index: usize },
+    SelectingApp { selected_index: usize, selected_unique_id: String },
+    SelectingCategory { selected_index: usize, selected_unique_id: String },
+    CategoryMenu { unique_id: String, selected_index: usize },
     Input { prompt: String, buffer: String, action: InputAction },
     CommandsPopup,
     HistoryPopup { view_mode: ViewMode, scroll_position: usize },
@@ -49,10 +50,9 @@ pub struct App {
     history: Vec<Session>,
     pub current_history: Vec<Session>,
     pub usage: Vec<(String, i64)>,
-    pub daily_usage: Vec<(String, i64)>, // Hierarchical for Detailed Stats
-    pub weekly_usage: Vec<(String, i64)>,
-    pub monthly_usage: Vec<(String, i64)>,
-    pub flat_daily_usage: Vec<(String, i64)>, // Flat for Today's Activity Progress
+        pub daily_usage: Vec<HierarchicalDisplayItem>, // Hierarchical for Detailed Stats
+        pub weekly_usage: Vec<HierarchicalDisplayItem>,
+        pub monthly_usage: Vec<HierarchicalDisplayItem>,    pub flat_daily_usage: Vec<(String, i64)>, // Flat for Today's Activity Progress
     pub current_view_mode: ViewMode,  // Track current dashboard view mode
     pub logs: Vec<String>,
     pub manual_app_name: Option<String>,
@@ -570,49 +570,53 @@ impl App {
                                      _ => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                                  }
                              }
-                             AppState::SelectingApp { selected_index } => {
+                             AppState::SelectingApp { selected_index, selected_unique_id } => {
                                  match key.code {
                                      KeyCode::Up => {
                                          if *selected_index > 0 {
                                              *selected_index -= 1;
+                                             *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
                                          }
                                      }
                                      KeyCode::Down => {
-                                         if *selected_index < self.usage.len().saturating_sub(1) {
+                                         if *selected_index < self.daily_usage.len().saturating_sub(1) {
                                              *selected_index += 1;
+                                             *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
                                          }
                                      }
                                      KeyCode::Enter => {
-                                         if let Some((app_name, _)) = self.usage.get(*selected_index) {
-                                             self.start_rename_app(app_name.clone());
+                                         if let Some(item) = self.daily_usage.get(*selected_index) {
+                                             self.start_rename_app(item.unique_id.clone());
                                          }
                                      }
                                      KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                                      _ => {}
                                  }
                              }
-                             AppState::SelectingCategory { selected_index } => {
+                             AppState::SelectingCategory { selected_index, selected_unique_id } => {
                                  match key.code {
                                      KeyCode::Up => {
                                          if *selected_index > 0 {
                                              *selected_index -= 1;
+                                             *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
                                          }
                                      }
                                      KeyCode::Down => {
-                                         if *selected_index < self.usage.len().saturating_sub(1) {
+                                         if *selected_index < self.daily_usage.len().saturating_sub(1) {
                                              *selected_index += 1;
+                                             *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
                                          }
                                      }
                                      KeyCode::Enter => {
-                                         if let Some((app_name, _)) = self.usage.get(*selected_index) {
-                                             self.start_category_menu(app_name.clone());
+                                         if let Some(item) = self.daily_usage.get(*selected_index) {
+                                             self.start_category_menu(item.unique_id.clone());
                                          }
                                      }
                                      KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
                                      _ => {}
                                  }
                              }
-                             AppState::CategoryMenu { app_name, selected_index } => {
+                             AppState::CategoryMenu { unique_id, selected_index } => {
                                  let categories = Self::get_category_options();
                                  match key.code {
                                      KeyCode::Up => {
@@ -627,9 +631,9 @@ impl App {
                                      }
                                      KeyCode::Enter => {
                                          if let Some(category) = categories.get(*selected_index) {
-                                             let app = app_name.clone();
+                                             let id = unique_id.clone();
                                              let cat = category.clone();
-                                             self.handle_category_selection(app, cat).await?;
+                                             self.handle_category_selection(id, cat).await?;
                                          }
                                      }
                                      KeyCode::Esc => self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() },
@@ -737,6 +741,11 @@ impl App {
                         if latest_session.app_name == current_session.app_name &&
                            latest_session.start_time == current_session.start_time {
                             latest_session.duration = current_duration;
+                            // Update renamed fields for persistence
+                            latest_session.browser_page_title_renamed = current_session.browser_page_title_renamed.clone();
+                            latest_session.terminal_directory_renamed = current_session.terminal_directory_renamed.clone();
+                            latest_session.editor_filename_renamed = current_session.editor_filename_renamed.clone();
+                            latest_session.tmux_window_name_renamed = current_session.tmux_window_name_renamed.clone();
                         }
                     }
                 }
@@ -780,7 +789,7 @@ impl App {
         crate::ui::render::draw_dashboard(self, f, area, view_mode);
     }
 
-    pub fn draw_bar_chart(&self, f: &mut Frame, area: ratatui::layout::Rect, title: &str, bar_data: &[(&str, u64)]) {
+    pub fn draw_bar_chart(&self, f: &mut Frame, area: ratatui::layout::Rect, title: &str, bar_data: &[crate::ui::hierarchical::HierarchicalDisplayItem]) {
         crate::ui::render::draw_bar_chart(self, f, area, title, bar_data);
     }
 
@@ -788,7 +797,7 @@ impl App {
         crate::ui::render::draw_history(self, f, area);
     }
 
-    pub fn draw_pie_chart(&self, f: &mut Frame, area: ratatui::layout::Rect, data: &[(String, i64)]) {
+    pub fn draw_pie_chart(&self, f: &mut Frame, area: ratatui::layout::Rect, data: &[HierarchicalDisplayItem]) {
         crate::ui::render::draw_pie_chart(self, f, area, data);
     }
 
@@ -862,27 +871,30 @@ impl App {
     }
 
     fn start_app_selection(&mut self) {
-        if !self.usage.is_empty() {
-            self.state = AppState::SelectingApp { selected_index: 0 };
+        if !self.daily_usage.is_empty() {
+            let initial_unique_id = self.daily_usage[0].unique_id.clone();
+            self.state = AppState::SelectingApp { selected_index: 0, selected_unique_id: initial_unique_id };
         }
     }
 
-    fn start_rename_app(&mut self, old_name: String) {
+    fn start_rename_app(&mut self, unique_id: String) {
+        let display_name = self.daily_usage.iter().find(|item| item.unique_id == unique_id).map(|item| item.display_name.clone()).unwrap_or(unique_id.clone());
         self.state = AppState::Input {
-            prompt: format!("Rename '{}' to", old_name),
+            prompt: format!("Rename '{}' to", display_name),
             buffer: String::new(),
-            action: InputAction::RenameApp { old_name },
+            action: InputAction::RenameApp { old_name: unique_id },
         };
     }
 
     fn start_category_selection(&mut self) {
-        if !self.usage.is_empty() {
-            self.state = AppState::SelectingCategory { selected_index: 0 };
+        if !self.daily_usage.is_empty() {
+            let initial_unique_id = self.daily_usage[0].unique_id.clone();
+            self.state = AppState::SelectingCategory { selected_index: 0, selected_unique_id: initial_unique_id };
         }
     }
 
-    fn start_category_menu(&mut self, app_name: String) {
-        self.state = AppState::CategoryMenu { app_name, selected_index: 0 };
+    fn start_category_menu(&mut self, unique_id: String) {
+        self.state = AppState::CategoryMenu { unique_id, selected_index: 0 };
     }
 
     pub fn get_category_options() -> Vec<String> {
@@ -1060,9 +1072,6 @@ impl App {
 
         match action {
             InputAction::RenameApp { old_name } => {
-                // Get the original category before creating context
-                let original_category = self.get_app_category(&old_name).0.to_string();
-
                 // Create command context for executing commands
                 let mut ctx = CommandContext {
                     database: &self.database,
@@ -1071,7 +1080,7 @@ impl App {
                 };
 
                 // Execute rename command using commands module
-                let result = commands::execute_rename_app(&mut ctx, &old_name, &buffer, &original_category).await?;
+                let result = commands::execute_rename_app(&mut ctx, &old_name, &buffer).await?;
 
                 if result.should_refresh {
                     self.refresh_all_data().await?;

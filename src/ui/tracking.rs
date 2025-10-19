@@ -4,6 +4,7 @@ use crate::database::connection::Database;
 use crate::models::session::Session;
 use crate::tracker::monitor::AppMonitor;
 use crate::ui::session;
+use crate::ui::hierarchical::HierarchicalDisplayItem;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {
@@ -39,9 +40,9 @@ pub struct SwitchResult {
 /// Result of refreshing dashboard data
 pub struct RefreshData {
     pub usage: Vec<(String, i64)>,
-    pub daily_usage: Vec<(String, i64)>,
-    pub weekly_usage: Vec<(String, i64)>,
-    pub monthly_usage: Vec<(String, i64)>,
+    pub daily_usage: Vec<HierarchicalDisplayItem>,
+    pub weekly_usage: Vec<HierarchicalDisplayItem>,
+    pub monthly_usage: Vec<HierarchicalDisplayItem>,
     pub history: Vec<Session>,
     pub current_history: Vec<Session>,
 }
@@ -68,11 +69,12 @@ pub async fn start_tracking(
     let (category_name, _) = categorize_fn(&app_name);
 
     let session = session::create_session_with_parsing(
+        ctx.database,
         app_name.clone(),
         window_name.clone(),
         start_time,
         category_name.to_string(),
-    );
+    ).await?;
 
     let log_message = format!("[{}] Started tracking: {}", Local::now().format("%H:%M:%S"), app_name);
 
@@ -116,11 +118,12 @@ pub async fn switch_app(
     let (category_name, _) = categorize_fn(&new_app);
 
     let new_session = session::create_session_with_parsing(
+        ctx.database,
         new_app.clone(),
         window_name.clone(),
         start_time,
         category_name.to_string(),
-    );
+    ).await?;
 
     logs.push(format!("[{}] Switched to: {}", Local::now().format("%H:%M:%S"), new_app));
 
@@ -135,9 +138,6 @@ pub async fn switch_app(
 
 pub async fn refresh_all_data(database: &Database, view_mode: &ViewMode) -> Result<RefreshData> {
     let usage = database.get_app_usage().await?;
-    let daily_usage = database.get_daily_usage().await.unwrap_or_default();
-    let weekly_usage = database.get_weekly_usage().await.unwrap_or_default();
-    let monthly_usage = database.get_monthly_usage().await.unwrap_or_default();
     let history = database.get_recent_sessions(30).await.unwrap_or_default();
 
     let current_history = match view_mode {
@@ -145,6 +145,11 @@ pub async fn refresh_all_data(database: &Database, view_mode: &ViewMode) -> Resu
         ViewMode::Weekly => database.get_weekly_sessions().await.unwrap_or_default(),
         ViewMode::Monthly => database.get_monthly_sessions().await.unwrap_or_default(),
     };
+
+    // Create hierarchical usage data from current_history
+    let daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&current_history);
+    let weekly_usage = daily_usage.clone();
+    let monthly_usage = daily_usage.clone();
 
     Ok(RefreshData {
         usage,

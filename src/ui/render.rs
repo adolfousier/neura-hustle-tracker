@@ -59,15 +59,17 @@ pub fn draw(app: &App, f: &mut Frame) {
             f.render_widget(log_list, chunks[1]);
         }
 
-        AppState::SelectingApp { selected_index } => {
+        AppState::SelectingApp { selected_index, selected_unique_id: _ } => {
             // Full-screen app selection view
-            let max_items = (chunks[1].height.saturating_sub(2) as usize).min(20).max(5);
+            let max_items = (chunks[1].height.saturating_sub(2) as usize).min(app.daily_usage.len()).max(5);
+            let mut last_parent_color = Color::White;
             let usage_items: Vec<ListItem> = app
-                .usage
+                .daily_usage
                 .iter()
                 .enumerate()
                 .take(max_items)
-                .map(|(i, (app, duration))| {
+                .map(|(i, item)| {
+                    let duration = item.duration;
                     let hours = duration / 3600;
                     let minutes = (duration % 3600) / 60;
                     let prefix = if i == *selected_index { "→ " } else { "  " };
@@ -78,13 +80,29 @@ pub fn draw(app: &App, f: &mut Frame) {
                         format!("{}m", minutes)
                     };
 
-                    let clean_app = App::clean_app_name(app);
+                    let clean_app = App::clean_app_name(&item.display_name);
+                    let (_, color) = if item.is_sub_entry {
+                        if let Some(parent) = &item.parent_app_name {
+                            app.get_app_category(parent)
+                        } else {
+                            app.get_app_category(&item.display_name)
+                        }
+                    } else {
+                        app.get_app_category(&item.display_name)
+                    };
+
+                    if !item.is_sub_entry {
+                        last_parent_color = color;
+                    }
+
                     let display = format!("{}{:<30} {}", prefix, clean_app, time_display);
 
                     let style = if i == *selected_index {
                         Style::default().fg(Color::Yellow)
+                    } else if item.is_sub_entry {
+                        Style::default().fg(last_parent_color)
                     } else {
-                        Style::default()
+                        Style::default().fg(color)
                     };
 
                     ListItem::new(Line::from(display)).style(style)
@@ -98,15 +116,17 @@ pub fn draw(app: &App, f: &mut Frame) {
             f.render_widget(usage_list, chunks[1]);
         }
 
-        AppState::SelectingCategory { selected_index } => {
+        AppState::SelectingCategory { selected_index, selected_unique_id: _ } => {
             // Full-screen app selection view for category assignment
-            let max_items = (chunks[1].height.saturating_sub(2) as usize).min(20).max(5);
+            let max_items = (chunks[1].height.saturating_sub(2) as usize).min(app.daily_usage.len()).max(5);
+            let mut last_parent_color = Color::White;
             let usage_items: Vec<ListItem> = app
-                .usage
+                .daily_usage
                 .iter()
                 .enumerate()
                 .take(max_items)
-                .map(|(i, (app_name, duration))| {
+                .map(|(i, item)| {
+                    let duration = item.duration;
                     let hours = duration / 3600;
                     let minutes = (duration % 3600) / 60;
                     let prefix = if i == *selected_index { "→ " } else { "  " };
@@ -117,12 +137,27 @@ pub fn draw(app: &App, f: &mut Frame) {
                         format!("{}m", minutes)
                     };
 
-                    let clean_app = App::clean_app_name(app_name);
-                    let (category, color) = app.get_app_category(app_name);
+                    let clean_app = App::clean_app_name(&item.display_name);
+                    let (category, color) = if item.is_sub_entry {
+                        if let Some(parent) = &item.parent_app_name {
+                            app.get_app_category(parent)
+                        } else {
+                            app.get_app_category(&item.display_name)
+                        }
+                    } else {
+                        app.get_app_category(&item.display_name)
+                    };
+
+                    if !item.is_sub_entry {
+                        last_parent_color = color;
+                    }
+
                     let display = format!("{}{:<30} {} [{}]", prefix, clean_app, time_display, category);
 
                     let style = if i == *selected_index {
                         Style::default().fg(Color::Yellow)
+                    } else if item.is_sub_entry {
+                        Style::default().fg(last_parent_color)
                     } else {
                         Style::default().fg(color)
                     };
@@ -138,7 +173,7 @@ pub fn draw(app: &App, f: &mut Frame) {
             f.render_widget(usage_list, chunks[1]);
         }
 
-        AppState::CategoryMenu { app_name, selected_index } => {
+        AppState::CategoryMenu { unique_id, selected_index } => {
             // Show category selection menu
             let categories = App::get_category_options();
             let category_items: Vec<ListItem> = categories
@@ -160,6 +195,12 @@ pub fn draw(app: &App, f: &mut Frame) {
                 })
                 .collect();
 
+            // Extract app name from unique_id (format: "app_name:actual_name")
+            let app_name = if unique_id.starts_with("app_name:") {
+                unique_id.strip_prefix("app_name:").unwrap_or(unique_id)
+            } else {
+                unique_id
+            };
             let clean_app = App::clean_app_name(app_name);
             let title = format!("🏷️  Select Category for '{}' (↑/↓ to navigate, Enter to select, Esc to cancel)", clean_app);
             let category_list = List::new(category_items)
@@ -374,22 +415,18 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
     let use_vertical_layout = area.width < 120 || area.height < 30;
 
     let (data, title) = match view_mode {
-        ViewMode::Daily => (&app.daily_usage, "📊 Daily Usage"),
-        ViewMode::Weekly => (&app.weekly_usage, "📊 Weekly Usage (7 days)"),
-        ViewMode::Monthly => (&app.monthly_usage, "📊 Monthly Usage (30 days)"),
+        ViewMode::Daily => (app.daily_usage.clone(), "📊 Daily Usage"),
+        ViewMode::Weekly => (app.weekly_usage.clone(), "📊 Weekly Usage (7 days)"),
+        ViewMode::Monthly => (app.monthly_usage.clone(), "📊 Monthly Usage (30 days)"),
     };
 
+    // Create a mutable clone to sort for the bar chart
+    let mut sorted_bar_data = data.clone();
+    sorted_bar_data.sort_by(|a, b| b.duration.cmp(&a.duration));
+
     // Create bar chart data - limit based on space
-    // Keep sub-entries but we'll track their parent for coloring
     let max_bars = if area.width < 80 { 5 } else if area.width < 120 { 8 } else { 10 };
-    let bar_data: Vec<(&str, u64)> = data
-        .iter()
-        .take(max_bars)
-        .map(|(app, duration)| {
-            let minutes = (duration / 60) as u64;
-            (app.as_str(), minutes)
-        })
-        .collect();
+    let bar_data: &[crate::ui::hierarchical::HierarchicalDisplayItem] = &sorted_bar_data[..sorted_bar_data.len().min(max_bars)];
 
     if use_vertical_layout {
         // VERTICAL LAYOUT for small terminals
@@ -405,12 +442,12 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
             ].as_ref())
             .split(area);
 
-        app.draw_bar_chart(f, chunks[0], title, &bar_data);
+        app.draw_bar_chart(f, chunks[0], title, bar_data);
         app.draw_timeline(f, chunks[1]);
         app.draw_afk(f, chunks[2]);
-        draw_stats(f, chunks[3], data);
+        draw_stats(f, chunks[3], &data);
         app.draw_history(f, chunks[4]);
-        app.draw_pie_chart(f, chunks[5], data);
+        app.draw_pie_chart(f, chunks[5], &data);
     } else {
         // HORIZONTAL LAYOUT for larger terminals (50/50 split)
         let main_chunks = Layout::default()
@@ -440,20 +477,20 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
             ].as_ref())
             .split(main_chunks[1]);
 
-        app.draw_bar_chart(f, left_chunks[0], title, &bar_data);
+        app.draw_bar_chart(f, left_chunks[0], title, bar_data);
         let timeline_afk_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
             .split(left_chunks[1]);
         app.draw_timeline(f, timeline_afk_chunks[0]);
         app.draw_afk(f, timeline_afk_chunks[1]);
-        draw_stats(f, left_chunks[2], data);
+        draw_stats(f, left_chunks[2], &data);
         app.draw_history(f, right_chunks[0]);
-        app.draw_pie_chart(f, right_chunks[1], data);
+        app.draw_pie_chart(f, right_chunks[1], &data);
     }
 }
 
-pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_data: &[(&str, u64)]) {
+pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_data: &[crate::ui::hierarchical::HierarchicalDisplayItem]) {
     if bar_data.is_empty() {
         let empty_msg = Paragraph::new("No data available yet. Start tracking!")
             .block(Block::default().borders(Borders::ALL).title(title));
@@ -464,7 +501,7 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
         let bar_gap = if area.width < 60 { 0 } else { 1 };
 
         // Find max value in minutes
-        let max_minutes = bar_data.iter().map(|(_, v)| *v).max().unwrap_or(0);
+        let max_minutes = bar_data.iter().map(|item| (item.duration / 60) as u64).max().unwrap_or(0);
 
         // Calculate scale: minimum 8h (480 min), or max_value + 2h (120 min)
         // This ensures bars never reach the top
@@ -478,19 +515,26 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
         let scale_hours = scale_minutes / 60;
 
         // Create bars with category-based colors and hour labels
-        // Track parent app for sub-entries coloring
-        let mut last_parent_app = "";
         let bars: Vec<Bar> = bar_data
             .iter()
-            .map(|(app_name, value_minutes)| {
+            .map(|item| {
+                let value_minutes = (item.duration / 60) as u64;
                 // Determine color: if sub-entry, use parent's color; otherwise use own category
-                let (_, color) = if app_name.starts_with("  └─") {
+                let (_, color) = if item.is_sub_entry {
                     // This is a sub-entry - use parent app's category color
-                    app.get_app_category(last_parent_app)
+                    if let Some(parent) = &item.parent_app_name {
+                        app.get_app_category(parent)
+                    } else {
+                        // Fallback to white if parent is not found
+                        ("", Color::White)
+                    }
                 } else {
-                    // This is a parent app - track it and use its category
-                    last_parent_app = app_name;
-                    app.get_app_category(app_name)
+                    // This is a parent app - use its own category
+                    if let Some(cat) = &item.category {
+                        App::category_from_string(cat)
+                    } else {
+                        app.get_app_category(&item.display_name)
+                    }
                 };
 
                 let hours = value_minutes / 60;
@@ -505,9 +549,9 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
                     format!("{}h{}m", hours, mins)
                 };
 
-                let clean_app = App::clean_app_name(app_name);
+                let clean_app = App::clean_app_name(&item.display_name);
                 Bar::default()
-                    .value(*value_minutes)
+                    .value(value_minutes)
                     .label(Line::from(clean_app))
                     .text_value(value_label)
                     .style(Style::default().fg(color))
@@ -527,7 +571,7 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
     }
 }
 
-pub fn draw_stats(f: &mut Frame, area: Rect, data: &[(String, i64)]) {
+pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::HierarchicalDisplayItem]) {
     // Adaptive number of items based on available height - more items for hierarchical view
     let max_items = (area.height.saturating_sub(3) as usize).min(30).max(5);
 
@@ -537,21 +581,22 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[(String, i64)]) {
     stats_items.push(ListItem::new(Line::from("")));
 
     // Group data hierarchically by category
-    // We'll detect if an item starts with "  └─" to treat it as a child
+    // We'll detect if an item is a sub-entry
     let mut shown_items = 0;
-    for (app, duration) in data.iter() {
+    let mut last_parent_color = Color::White;
+    for item in data.iter() {
         if shown_items >= max_items {
             break;
         }
 
-        let hours = duration / 3600;
-        let minutes = (duration % 3600) / 60;
+        let hours = item.duration / 3600;
+        let minutes = (item.duration % 3600) / 60;
 
         // Check if this is a child item (hierarchical sub-entry)
-        let is_child = app.starts_with("  └─");
+        let is_child = item.is_sub_entry;
 
         // Clean and truncate app name if terminal is narrow
-        let clean_app = App::clean_app_name(app);
+        let clean_app = App::clean_app_name(&item.display_name);
         let app_display = if area.width < 40 {
             if clean_app.len() > 20 {
                 format!("{}...", &clean_app[..17])
@@ -577,11 +622,18 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[(String, i64)]) {
             format!("  {} - {}", app_display, time_str)
         };
 
-        // Color child entries differently
+        // Color based on category
         let item_style = if is_child {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(last_parent_color)
         } else {
-            Style::default().fg(Color::White)
+            // Use category color for parent entries
+            let color = if let Some(cat) = &item.category {
+                App::category_from_string(cat).1
+            } else {
+                Color::White
+            };
+            last_parent_color = color;
+            Style::default().fg(color)
         };
 
         stats_items.push(ListItem::new(Line::from(display)).style(item_style));
@@ -589,8 +641,8 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[(String, i64)]) {
     }
 
     let total_duration: i64 = data.iter()
-        .filter(|(app, _)| !app.starts_with("  └─")) // Only count parent entries
-        .map(|(_, d)| d)
+        .filter(|item| !item.is_sub_entry) // Only count parent entries
+        .map(|item| item.duration)
         .sum();
     let total_hours = total_duration / 3600;
     let total_minutes = (total_duration % 3600) / 60;
@@ -709,19 +761,23 @@ pub fn draw_history(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(history_list, area);
 }
 
-pub fn draw_pie_chart(app: &App, f: &mut Frame, area: Rect, data: &[(String, i64)]) {
+pub fn draw_pie_chart(app: &App, f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::HierarchicalDisplayItem]) {
     // Calculate category totals - using BTreeMap for stable sorted order
-    // Filter out sub-entries (they start with "  └─")
+    // Filter out sub-entries
     let mut categories: BTreeMap<&str, (i64, Color)> = BTreeMap::new();
     let total: i64 = data.iter()
-        .filter(|(app_name, _)| !app_name.starts_with("  └─"))
-        .map(|(_, d)| d)
+        .filter(|item| !item.is_sub_entry)
+        .map(|item| item.duration)
         .sum();
 
-    for (app_name, duration) in data.iter().filter(|(app_name, _)| !app_name.starts_with("  └─")) {
-        let (category, color) = app.get_app_category(app_name);
+    for item in data.iter().filter(|item| !item.is_sub_entry) {
+        let (category, color) = if let Some(cat) = &item.category {
+            App::category_from_string(cat)
+        } else {
+            app.get_app_category(&item.display_name)
+        };
         let entry = categories.entry(category).or_insert((0, color));
-        entry.0 += duration;
+        entry.0 += item.duration;
     }
 
     // Create pie chart representation as text

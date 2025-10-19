@@ -290,17 +290,25 @@ impl Daemon {
             browser_url: parsed.browser_url,
             browser_page_title: parsed.browser_page_title,
             browser_notification_count: parsed.browser_notification_count,
+            browser_page_title_renamed: None, // Added
+            browser_page_title_category: None, // Added
             terminal_username: parsed.terminal_username,
             terminal_hostname: parsed.terminal_hostname,
             terminal_directory: parsed.terminal_directory,
             terminal_project_name: parsed.terminal_project_name,
+            terminal_directory_renamed: None, // Added
+            terminal_directory_category: None, // Added
             editor_filename: parsed.editor_filename,
             editor_filepath: parsed.editor_filepath,
             editor_project_path: parsed.editor_project_path,
             editor_language: parsed.editor_language,
+            editor_filename_renamed: None, // Added
+            editor_filename_category: None, // Added
             tmux_window_name: parsed.tmux_window_name,
             tmux_pane_count: parsed.tmux_pane_count,
             terminal_multiplexer: parsed.terminal_multiplexer,
+            tmux_window_name_renamed: None, // Added
+            tmux_window_name_category: None, // Added
             ide_project_name: parsed.ide_project_name,
             ide_file_open: parsed.ide_file_open,
             ide_workspace: parsed.ide_workspace,

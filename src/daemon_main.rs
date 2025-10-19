@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
     log::info!("Connecting to database...");
     let database = Database::new(&settings.database_url).await?;
     log::info!("Connected successfully. Creating tables...");
-    database.create_table().await?;
+
     log::info!("Tables created. Starting daemon...");
 
     let mut daemon = Daemon::new(database);

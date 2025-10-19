@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.3.4 (2025-10-19)
+
+- **Hierarchical View**: Implemented a hierarchical view for application usage, allowing sub-entries for detailed tracking of activities within applications (e.g., browser tabs, terminal projects, editor files).
+- **Rename and Categorize Sub-entries**: Added the ability to rename and categorize sub-entries, providing more granular control over activity tracking.
+- **UI Enhancements**:
+    - Updated the "Rename" and "Category" popups to display the new hierarchical view.
+    - Ensured consistent color-coding for categories across all UI components, including sub-entries.
+    - Fixed an issue where the bar chart was not sorted by usage duration.
+- **Keybinding Fixes**:
+    - Corrected inverted keybindings for "Commands" and "Category" popups.
+- **Bug Fixes**:
+    - Fixed a bug where sub-entries were not being displayed in the "Rename" and "Category" popups.
+    - Fixed a bug where sub-entries were not inheriting the color of their parent category.
+    - Fixed a compilation error related to mismatched types in the rendering logic.
+
 ## v0.3.3 (2025-10-18)
 
 - Release 0.3.2: improvements in fetching and storing terminal/projects data
