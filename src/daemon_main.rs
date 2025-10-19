@@ -9,35 +9,7 @@ use crate::config::settings::Settings;
 use dotenvy::dotenv;
 use std::env;
 use std::fs::OpenOptions;
-use std::io::Write;
-use std::sync::{Arc, Mutex};
 
-/// A writer that flushes after every write to ensure logs appear immediately
-struct FlushingWriter {
-    inner: Arc<Mutex<std::fs::File>>,
-}
-
-impl FlushingWriter {
-    fn new(file: std::fs::File) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(file)),
-        }
-    }
-}
-
-impl Write for FlushingWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut file = self.inner.lock().unwrap();
-        let result = file.write(buf);
-        file.flush()?; // Flush after every write
-        result
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        let mut file = self.inner.lock().unwrap();
-        file.flush()
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -51,23 +23,21 @@ async fn main() -> Result<()> {
         .unwrap_or(false);
 
     if debug_enabled {
-        // Enable debug logging to daemon.log file with immediate flushing
+        // Enable debug logging to daemon.log file
         let log_file = OpenOptions::new()
             .create(true)
             .append(true)
             .open("daemon.log")
-            .expect("Failed to open daemon.log file");
-
-        let flushing_writer = FlushingWriter::new(log_file);
+            .expect("Failed to open log file");
 
         env_logger::Builder::from_env(
             env_logger::Env::default()
                 .default_filter_or("neura_hustle_tracker=debug")
         )
-        .target(env_logger::Target::Pipe(Box::new(flushing_writer)))
+        .target(env_logger::Target::Pipe(Box::new(log_file)))
         .init();
 
-        log::info!("=== DAEMON DEBUG LOGGING ENABLED ===");
+        log::info!("=== DEBUG LOGGING ENABLED ===");
         log::info!("Writing logs to daemon.log");
         log::info!("To disable: Remove DEBUG_LOGS_ENABLED from .env or set to false");
     } else {
@@ -82,7 +52,27 @@ async fn main() -> Result<()> {
     log::info!("Starting Neura Hustle Tracker Daemon");
     let settings = Settings::new()?;
     log::info!("Connecting to database...");
-    let database = Database::new(&settings.database_url).await?;
+    log::info!("Database URL: {}", settings.database_url);
+    log::info!("Environment variables loaded: POSTGRES_USERNAME={}, POSTGRES_PASSWORD=***", 
+               env::var("POSTGRES_USERNAME").unwrap_or_else(|_| "NOT_SET".to_string()));
+    let database = match Database::new(&settings.database_url).await {
+        Ok(db) => {
+            log::info!("Database connection successful");
+            db
+        }
+        Err(e) => {
+            if debug_enabled {
+                log::error!("Database connection failed: {}", e);
+                log::error!("Full error details: {:?}", e);
+            }
+            eprintln!("❌ Daemon failed to connect to database. Please check:");
+            eprintln!("  - Database is running (make daemon-status)");
+            eprintln!("  - .env file has correct DATABASE_URL");
+            eprintln!("  - Port number in DATABASE_URL is valid");
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
     log::info!("Connected successfully. Creating tables...");
 
     log::info!("Tables created. Starting daemon...");
