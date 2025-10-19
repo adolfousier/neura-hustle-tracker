@@ -116,7 +116,7 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<(String, i64)> {
 
             for (sub_entry, duration) in session_list.iter().take(2) {
                 if sub_entry != "(general)" {
-                    result.push((format!("  └─ {}", sub_entry), *duration));
+                    result.push((format!("  {}", sub_entry), *duration));
                 }
             }
         }
@@ -294,7 +294,7 @@ fn flatten_hierarchical_map(
 
             // Only show top N children per parent to avoid clutter
             for (child, duration) in child_list.iter().take(max_children) {
-                flattened.push((format!("  └─ {}", child), *duration));
+                flattened.push((format!("  {}", child), *duration));
             }
         }
     }
