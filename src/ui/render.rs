@@ -175,7 +175,7 @@ pub fn draw(app: &App, f: &mut Frame) {
 
         AppState::CategoryMenu { unique_id, selected_index } => {
             // Show category selection menu
-            let categories = App::get_category_options();
+            let categories = app.get_category_options();
             let category_items: Vec<ListItem> = categories
                 .iter()
                 .enumerate()
@@ -526,7 +526,7 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
                         app.get_app_category(parent)
                     } else {
                         // Fallback to white if parent is not found
-                        ("", Color::White)
+                        ("".to_string(), Color::White)
                     }
                 } else {
                     // This is a parent app - use its own category
@@ -764,7 +764,7 @@ pub fn draw_history(app: &App, f: &mut Frame, area: Rect) {
 pub fn draw_pie_chart(app: &App, f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::HierarchicalDisplayItem]) {
     // Calculate category totals - using BTreeMap for stable sorted order
     // Filter out sub-entries
-    let mut categories: BTreeMap<&str, (i64, Color)> = BTreeMap::new();
+    let mut categories: BTreeMap<String, (i64, Color)> = BTreeMap::new();
     let total: i64 = data.iter()
         .filter(|item| !item.is_sub_entry)
         .map(|item| item.duration)

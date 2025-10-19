@@ -66,6 +66,7 @@ pub struct App {
     pub file_breakdown: Vec<(String, String, i64)>,
     pub terminal_breakdown: Vec<(String, i64)>,
     pub category_breakdown: Vec<(String, i64)>,
+    pub categories: Vec<String>,
 }
 
 impl App {
@@ -105,6 +106,7 @@ impl App {
             file_breakdown: vec![],
             terminal_breakdown: vec![],
             category_breakdown: vec![],
+            categories: vec![],
         }
     }
 
@@ -365,6 +367,7 @@ impl App {
         self.history = self.database.get_recent_sessions(30).await.unwrap();
         self.usage = self.database.get_app_usage().await.unwrap();
         self.current_history = self.database.get_daily_sessions().await.unwrap();
+        self.refresh_categories().await.unwrap();
 
         // Create hierarchical usage data from sessions for Detailed Stats
         self.daily_usage = crate::ui::hierarchical::create_hierarchical_usage(&self.current_history);
@@ -617,7 +620,7 @@ impl App {
                                  }
                              }
                              AppState::CategoryMenu { unique_id, selected_index } => {
-                                 let categories = Self::get_category_options();
+                                 let categories = self.categories.clone();
                                  match key.code {
                                      KeyCode::Up => {
                                          if *selected_index > 0 {
@@ -897,10 +900,30 @@ impl App {
         self.state = AppState::CategoryMenu { unique_id, selected_index: 0 };
     }
 
-    pub fn get_category_options() -> Vec<String> {
-        commands::get_category_options()
+    pub fn get_category_options(&self) -> Vec<String> {
+        self.categories.clone()
     }
 
+    pub async fn refresh_categories(&mut self) -> Result<()> {
+        let mut categories = commands::get_category_options();
+        
+        // Fetch custom categories from database
+        match self.database.get_custom_categories().await {
+            Ok(custom_cats) => {
+                for cat in custom_cats {
+                    if !categories.contains(&cat) {
+                        categories.insert(categories.len() - 1, cat);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch custom categories: {}", e);
+            }
+        }
+        
+        self.categories = categories;
+        Ok(())
+    }
     async fn handle_category_selection(&mut self, app_name: String, category: String) -> Result<()> {
         if category == "➕ Create New Category" {
             // User wants to create custom category
@@ -945,7 +968,7 @@ impl App {
         }
     }
 
-    pub fn categorize_app(app: &str) -> (&'static str, Color) {
+    pub fn categorize_app(app: &str) -> (String, Color) {
         let app_lower = app.to_lowercase();
         if app_lower.contains("code") || app_lower.contains("vim") || app_lower.contains("nvim") ||
            app_lower.contains("terminal") || app_lower.contains("alacritty") || app_lower.contains("kitty") ||
@@ -953,46 +976,52 @@ impl App {
            app_lower.contains("vscode") || app_lower.contains("vscodium") || app_lower.contains("gedit") ||
            app_lower.contains("nano") || app_lower.contains("emacs") || app_lower.contains("atom") ||
            app_lower.contains("sublime") || app_lower.contains("console") || app_lower.contains("iterm") {
-            ("💻 Development", Color::Yellow)
+            ("💻 Development".to_string(), Color::Yellow)
         } else if app_lower.contains("browser") || app_lower.contains("chrome") || app_lower.contains("firefox") ||
                   app_lower.contains("brave") || app_lower.contains("edge") || app_lower.contains("chromium") {
-            ("🌐 Browsing", Color::Blue)
+            ("🌐 Browsing".to_string(), Color::Blue)
         } else if app_lower.contains("slack") || app_lower.contains("zoom") || app_lower.contains("teams") ||
                   app_lower.contains("discord") || app_lower.contains("telegram") || app_lower.contains("chat") ||
                   app_lower.contains("signal") || app_lower.contains("element") || app_lower.contains("video-call") ||
                   app_lower.contains("skype") || app_lower.contains("jitsi") {
-            ("💬 Communication", Color::Green)
+            ("💬 Communication".to_string(), Color::Green)
         } else if app_lower.contains("spotify") || app_lower.contains("vlc") || app_lower.contains("music") ||
                   app_lower.contains("media") || app_lower.contains("rhythmbox") || app_lower.contains("audacious") ||
                   app_lower.contains("clementine") {
-            ("🎵 Media", Color::Magenta)
+            ("🎵 Media".to_string(), Color::Magenta)
         } else if app_lower.contains("nautilus") || app_lower.contains("files") || app_lower.contains("dolphin") ||
                   app_lower.contains("file-manager") || app_lower.contains("thunar") || app_lower.contains("nemo") {
-            ("📁 Files", Color::Cyan)
+            ("📁 Files".to_string(), Color::Cyan)
         } else if app_lower.contains("thunderbird") || app_lower.contains("evolution") || app_lower.contains("geary") ||
                   app_lower.contains("email") {
-            ("📧 Email", Color::LightYellow)
+            ("📧 Email".to_string(), Color::LightYellow)
         } else if app_lower.contains("libreoffice") || app_lower.contains("soffice") {
-            ("📄 Office", Color::LightBlue)
+            ("📄 Office".to_string(), Color::LightBlue)
         } else {
-            ("📦 Other", Color::White)
+            ("📦 Other".to_string(), Color::White)
         }
     }
 
-    pub fn category_from_string(category: &str) -> (&'static str, Color) {
+    pub fn category_from_string(category: &str) -> (String, Color) {
         match category {
-            "💻 Development" => ("💻 Development", Color::Yellow),
-            "🌐 Browsing" => ("🌐 Browsing", Color::Blue),
-            "💬 Communication" => ("💬 Communication", Color::Green),
-            "🎵 Media" => ("🎵 Media", Color::Magenta),
-            "📁 Files" => ("📁 Files", Color::Cyan),
-            "📧 Email" => ("📧 Email", Color::LightYellow),
-            "📄 Office" => ("📄 Office", Color::LightBlue),
-            _ => ("📦 Other", Color::White),
+            "💻 Development" => ("💻 Development".to_string(), Color::Yellow),
+            "🌐 Browsing" => ("🌐 Browsing".to_string(), Color::Blue),
+            "💬 Communication" => ("💬 Communication".to_string(), Color::Green),
+            "🎵 Media" => ("🎵 Media".to_string(), Color::Magenta),
+            "📁 Files" => ("📁 Files".to_string(), Color::Cyan),
+            "📧 Email" => ("📧 Email".to_string(), Color::LightYellow),
+            "📄 Office" => ("📄 Office".to_string(), Color::LightBlue),
+            _ => {
+                if category == "📦 Other" {
+                    ("📦 Other".to_string(), Color::White)
+                } else {
+                    (category.to_string(), Color::LightMagenta)
+                }
+            }
         }
     }
 
-    pub fn get_app_category(&self, app: &str) -> (&'static str, Color) {
+    pub fn get_app_category(&self, app: &str) -> (String, Color) {
         // First try to find stored category in history
         for session in &self.current_history {
             if session.app_name == app {
@@ -1101,6 +1130,7 @@ impl App {
 
                 if result.should_refresh {
                     self.refresh_all_data().await?;
+                self.refresh_categories().await?;
                 }
 
                 self.state = AppState::Dashboard { view_mode: self.current_view_mode.clone() };

@@ -348,5 +348,22 @@ impl Database {
         .await?;
         Ok(rows)
     }
+    pub async fn get_custom_categories(&self) -> Result<Vec<String>> {
+        let categories: Vec<(String,)> = sqlx::query_as(
+            "SELECT DISTINCT category FROM sessions WHERE category IS NOT NULL AND category NOT IN ($1, $2, $3, $4, $5, $6, $7, $8)"
+        )
+        .bind("💻 Development")
+        .bind("🌐 Browsing")
+        .bind("💬 Communication")
+        .bind("🎵 Media")
+        .bind("📁 Files")
+        .bind("📧 Email")
+        .bind("📄 Office")
+        .bind("📦 Other")
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(categories.into_iter().map(|(c,)| c).collect())
+    }
 }
+
 

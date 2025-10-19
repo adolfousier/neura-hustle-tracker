@@ -49,7 +49,7 @@ pub struct RefreshData {
 
 pub async fn start_tracking(
     ctx: &TrackingContext<'_>,
-    categorize_fn: fn(&str) -> (&'static str, ratatui::style::Color),
+    categorize_fn: fn(&str) -> (String, ratatui::style::Color),
 ) -> Result<TrackingResult> {
     let app_name = if let Some(manual_name) = &ctx.manual_app_name {
         manual_name.clone()
@@ -90,7 +90,7 @@ pub async fn switch_app(
     ctx: &TrackingContext<'_>,
     current_session: Option<Session>,
     new_app: String,
-    categorize_fn: fn(&str) -> (&'static str, ratatui::style::Color),
+    categorize_fn: fn(&str) -> (String, ratatui::style::Color),
 ) -> Result<SwitchResult> {
     let mut logs = Vec::new();
     let saved_session;
