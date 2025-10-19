@@ -112,7 +112,7 @@ sudo apt update && sudo apt install -y make docker.io curl git openssl && curl -
 ### macOS
 
 ```bash
-brew install make docker git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "POSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle-start='cd $(pwd) && make daemon-start'" >> ~/.zshrc && echo "alias hustle-stop='cd $(pwd) && make daemon-stop'" >> ~/.zshrc && echo "alias hustle-view='cd $(pwd) && make view'" >> ~/.zshrc && echo "alias hustle-status='cd $(pwd) && make daemon-status'" >> ~/.zshrc && source ~/.zshrc && make daemon-start
+echo "Please download and install Docker Desktop from https://docs.docker.com/desktop/install/mac-install/ before proceeding." && read -p "Press Enter to continue after installing Docker Desktop..." && brew install make git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "POSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle-start='cd $(pwd) && make daemon-start'" >> ~/.zshrc && echo "alias hustle-stop='cd $(pwd) && make daemon-stop'" >> ~/.zshrc && echo "alias hustle-view='cd $(pwd) && make view'" >> ~/.zshrc && echo "alias hustle-status='cd $(pwd) && make daemon-status'" >> ~/.zshrc && source ~/.zshrc && if ! docker info > /dev/null 2>&1; then echo "Error: Docker Desktop is not running. Please start Docker Desktop and re-run the command."; exit 1; fi && make daemon-start
 ```
 
 ### Windows (PowerShell)
@@ -201,6 +201,8 @@ docker compose up -d && cargo build --release && .\target\release\neura_hustle_t
 **Note**: Linux tracking is 100% accurate in unified mode. X11 and Wayland (with extension) work perfectly!
 
 #### macOS - Daemon Mode (Recommended)
+
+**⚠️ Important**: Docker Desktop must be running for `make daemon-start` and `docker compose` commands to work.
 
 - Install [Rust](https://rustup.rs/) and [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - Clone: `git clone https://github.com/adolfousier/neura-hustle-tracker && cd neura-hustle-tracker`
