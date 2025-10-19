@@ -66,8 +66,8 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<(String, i64)> {
             // Browser: show page title
             page_title.clone()
         } else if let Some(dir) = &session.terminal_directory {
-            // Terminal: show directory
-            dir.clone()
+            // Terminal: show project name from directory
+            extract_project_name(dir).unwrap_or_else(|| dir.clone())
         } else if let Some(filename) = &session.editor_filename {
             // Editor: show file
             if let Some(lang) = &session.editor_language {
@@ -116,7 +116,7 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<(String, i64)> {
 
             for (sub_entry, duration) in session_list.iter().take(2) {
                 if sub_entry != "(general)" {
-                    result.push((format!("  {}", sub_entry), *duration));
+                    result.push((format!("{}", sub_entry), *duration));
                 }
             }
         }
@@ -294,7 +294,7 @@ fn flatten_hierarchical_map(
 
             // Only show top N children per parent to avoid clutter
             for (child, duration) in child_list.iter().take(max_children) {
-                flattened.push((format!("  {}", child), *duration));
+                flattened.push((format!("  └─ {}", child), *duration));
             }
         }
     }

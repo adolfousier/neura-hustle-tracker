@@ -460,7 +460,7 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
         f.render_widget(empty_msg, area);
     } else {
         // Adaptive bar width based on terminal width
-        let bar_width = if area.width < 60 { 3 } else if area.width < 100 { 5 } else { 6 };
+        let bar_width = 10;
         let bar_gap = if area.width < 60 { 0 } else { 1 };
 
         // Find max value in minutes
