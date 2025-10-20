@@ -1,0 +1,2 @@
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS parsed_data JSONB;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS parsing_success BOOLEAN;
