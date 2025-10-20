@@ -97,6 +97,10 @@ impl Daemon {
                         let mut old_session = self.current_session.take().unwrap();
                         old_session.duration = Local::now().signed_duration_since(old_session.start_time).num_seconds();
 
+                        if let Err(e) = self.database.apply_renames_and_categories(&mut old_session).await {
+                            log::warn!("Failed to apply renames and categories on AFK change: {}", e);
+                        }
+
                         if let Err(e) = self.database.insert_session(&old_session).await {
                             log::error!("Failed to save session on AFK state change: {}", e);
                         } else {
@@ -147,6 +151,9 @@ impl Daemon {
             if last_save.elapsed() >= save_interval {
                 if let Some(session) = &mut self.current_session {
                     session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
+                    if let Err(e) = self.database.apply_renames_and_categories(session).await {
+                        log::warn!("Failed to apply renames and categories on auto-save: {}", e);
+                    }
                     if let Err(e) = self.database.insert_session(session).await {
                         log::error!("Failed to auto save session: {}", e);
                     } else {
@@ -163,6 +170,9 @@ impl Daemon {
         // Save current session on exit
         if let Some(mut session) = self.current_session.take() {
             session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
+            if let Err(e) = self.database.apply_renames_and_categories(&mut session).await {
+                log::warn!("Failed to apply renames and categories on exit: {}", e);
+            }
             if let Err(e) = self.database.insert_session(&session).await {
                 log::error!("Failed to save session on exit: {}", e);
             } else {
@@ -189,12 +199,16 @@ impl Daemon {
         let start_time = Local::now();
         let (category_name, _) = Self::categorize_app(&app_name);
 
-        let session = Self::create_session_with_parsing(
+        let mut session = Self::create_session_with_parsing(
             app_name.clone(),
             window_name.clone(),
             start_time,
             category_name.to_string(),
         );
+
+        if let Err(e) = self.database.apply_renames_and_categories(&mut session).await {
+            log::warn!("Failed to apply renames and categories: {}", e);
+        }
 
         self.current_session = Some(session);
         self.current_window = window_name;
@@ -218,12 +232,16 @@ impl Daemon {
         let start_time = Local::now();
         let (category_name, _) = Self::categorize_app(&new_app);
 
-        let session = Self::create_session_with_parsing(
+        let mut session = Self::create_session_with_parsing(
             new_app.clone(),
             window_name.clone(),
             start_time,
             category_name.to_string(),
         );
+
+        if let Err(e) = self.database.apply_renames_and_categories(&mut session).await {
+            log::warn!("Failed to apply renames and categories: {}", e);
+        }
 
         self.current_session = Some(session);
         self.current_app = new_app.clone();
