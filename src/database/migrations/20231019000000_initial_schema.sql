@@ -35,3 +35,6 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS editor_filename_category TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tmux_window_name_renamed TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS tmux_window_name_category TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_afk BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS parsed_data JSONB;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS parsing_success BOOLEAN;
