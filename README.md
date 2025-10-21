@@ -10,6 +10,12 @@
 A cross-platform time-tracking tool for monitoring your productivity through app usage during work sessions. Built with Rust, Ratatui for the UI and Postgres database. Supports Windows, macOS (macOS and Windows not tested yet, please if you try provide feedback), and Linux (X11 and Wayland).
 
 ![Demo](src/screenshots/demo.png)
+![Activities Breakdown](src/screenshots/demo-activities-breakdown.png)
+![Category Update View](src/screenshots/demo-category-update-view.png)
+![Commands View](src/screenshots/demo-commands-view.png)
+![History View](src/screenshots/demo-history-view.png)
+![Renaming App View](src/screenshots/demo-renaming-app-view.png)
+![Renaming Selector View](src/screenshots/demo-rename-selector-view.png)
 
 ## Features
 
@@ -93,7 +99,9 @@ Neura Hustle Tracker supports two operating modes depending on your platform:
 ## Prerequisites
 
 - Rust 1.90+
-- Docker and Docker Compose (for easy Postgres setup)
+- Docker and Docker Compose (Docker Desktop required for Windows/macOS, for easy Postgres setup)
+- Make (for running build commands)
+- Git (for cloning the repository)
 - **Platform-specific requirements**:
   - **Linux**: Requires a GUI desktop environment (GNOME, KDE, etc.) to detect active applications. Works with X11 and Wayland.
   - **macOS**: Screen Recording permission may be required for window titles
