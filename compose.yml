@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: hustle-tracker
       POSTGRES_USER: ${POSTGRES_USERNAME}

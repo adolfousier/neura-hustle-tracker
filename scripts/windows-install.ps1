@@ -29,14 +29,15 @@ if (!(Test-Path "Cargo.toml")) {
 $env:PATH += ";$env:USERPROFILE\.cargo\bin"
 
 # Create .env file if it doesn't exist
-if (!(Test-Path .env)) {
+$repoPath = Get-Location
+if (!(Test-Path "$repoPath\.env")) {
     $rand = New-Object System.Random
     $bytes = New-Object byte[] 16
     $rand.NextBytes($bytes)
     $USERNAME = "timetracker_$($rand.Next(65535).ToString('X4'))"
     $PASSWORD = [Convert]::ToBase64String($bytes)
     $envContent = "POSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker"
-    [System.IO.File]::WriteAllText(".env", $envContent)
+    [System.IO.File]::WriteAllText("$repoPath\.env", $envContent)
     Write-Host "Created .env file with database credentials" -ForegroundColor Yellow
 }
 
@@ -57,6 +58,16 @@ Add-Content $PROFILE "function hustle-status { Set-Location '$currentPath'; make
 
 # Reload profile
 . $PROFILE
+
+# Check if Docker is running
+Write-Host "Checking Docker..." -ForegroundColor Green
+try {
+    & docker version 2>$null | Out-Null
+    Write-Host "Docker is running." -ForegroundColor Green
+} catch {
+    Write-Host "Docker Desktop is not running. Please start Docker Desktop manually and re-run the script." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "Starting daemon..." -ForegroundColor Green
 & "C:\Program Files (x86)\GnuWin32\bin\make.exe" daemon-start
