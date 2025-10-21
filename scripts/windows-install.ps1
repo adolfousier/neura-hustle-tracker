@@ -1,0 +1,49 @@
+# Windows PowerShell Installation Script for Neura Hustle Tracker
+# Run this script in PowerShell as Administrator
+
+Write-Host "Installing Neura Hustle Tracker dependencies..." -ForegroundColor Green
+
+# Install required packages
+winget install --id=Rustlang.Rustup -e
+winget install --id=GnuWin32.Make -e  
+winget install --id=Docker.DockerDesktop -e
+winget install --id=Git.Git -e
+
+# Clone repository
+git clone https://github.com/adolfousier/neura-hustle-tracker.git
+cd neura-hustle-tracker
+
+# Add Rust to PATH
+$env:PATH += ";$env:USERPROFILE\.cargo\bin"
+
+# Create .env file if it doesn't exist
+if (!(Test-Path .env)) {
+    $rand = New-Object System.Random
+    $bytes = New-Object byte[] 16
+    $rand.NextBytes($bytes)
+    $USERNAME = "timetracker_$($rand.Next(65535).ToString('X4'))"
+    $PASSWORD = [Convert]::ToBase64String($bytes)
+    $envContent = "POSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker"
+    [System.IO.File]::WriteAllText(".env", $envContent)
+    Write-Host "Created .env file with database credentials" -ForegroundColor Yellow
+}
+
+# Create PowerShell profile functions
+if (!(Test-Path $PROFILE)) {
+    New-Item -Path $PROFILE -ItemType File -Force
+    Write-Host "Created PowerShell profile" -ForegroundColor Yellow
+}
+
+$currentPath = Get-Location
+Add-Content $PROFILE "function hustle-start { Set-Location '$currentPath'; make daemon-start }"
+Add-Content $PROFILE "function hustle-stop { Set-Location '$currentPath'; make daemon-stop }"
+Add-Content $PROFILE "function hustle-view { Set-Location '$currentPath'; make view }"
+Add-Content $PROFILE "function hustle-status { Set-Location '$currentPath'; make daemon-status }"
+
+# Reload profile
+. $PROFILE
+
+Write-Host "Starting daemon..." -ForegroundColor Green
+make daemon-start
+
+Write-Host "Installation complete! Use hustle-start, hustle-stop, hustle-view, and hustle-status commands." -ForegroundColor Cyan

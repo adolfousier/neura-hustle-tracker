@@ -115,68 +115,18 @@ sudo apt update && sudo apt install -y make docker.io curl git openssl && curl -
 echo "Please download and install Docker Desktop from https://docs.docker.com/desktop/install/mac-install/ before proceeding." && read -p "Press Enter to continue after installing Docker Desktop..." && brew install make git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && [ ! -f .env ] && USERNAME="timetracker_$(openssl rand -hex 4)" && PASSWORD="$(openssl rand -base64 16)" && echo -e "POSTGRES_USERNAME=$USERNAME\nPOSTGRES_PASSWORD=$PASSWORD\nDATABASE_URL=postgres://$USERNAME:$PASSWORD@localhost:5432/hustle-tracker" > .env && echo "alias hustle-start='cd $(pwd) && make daemon-start'" >> ~/.zshrc && echo "alias hustle-stop='cd $(pwd) && make daemon-stop'" >> ~/.zshrc && echo "alias hustle-view='cd $(pwd) && make view'" >> ~/.zshrc && echo "alias hustle-status='cd $(pwd) && make daemon-status'" >> ~/.zshrc && source ~/.zshrc && if ! docker info > /dev/null 2>&1; then echo "Error: Docker Desktop is not running. Please start Docker Desktop and re-run the command."; exit 1; fi && make daemon-start
 ```
 
-### Windows (PowerShell)
+### Windows
+
+**Download and run the installer script:**
+
+1. Open PowerShell as Administrator
+2. Run this single command:
 
 ```powershell
-# Check if winget is available
-if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
-    Write-Error "winget is not available. Please install Windows Package Manager or update Windows."
-    exit 1
-}
-
-# Install dependencies
-winget install --id=Rustlang.Rustup.MSVC -e --accept-package-agreements --accept-source-agreements
-winget install --id=GnuWin32.Make -e --accept-package-agreements --accept-source-agreements
-winget install --id=Docker.DockerDesktop -e --accept-package-agreements --accept-source-agreements
-winget install --id=Git.Git -e --accept-package-agreements --accept-source-agreements
-
-# Clone repository
-git clone https://github.com/adolfousier/neura-hustle-tracker.git
-cd neura-hustle-tracker
-
-# Add Rust to PATH for current session
-$env:PATH += ";$env:USERPROFILE\.cargo\bin"
-
-# Create .env file if it doesn't exist
-if (!(Test-Path .env)) {
-    $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"
-    $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256))
-    $envContent = @"
-POSTGRES_USERNAME=$USERNAME
-POSTGRES_PASSWORD=$PASSWORD
-DATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker
-"@
-    $envContent | Out-File .env -Encoding UTF8
-    Write-Host "Created .env file with auto-generated credentials"
-}
-
-# Create PowerShell profile functions
-$profilePath = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
-if (!(Test-Path $profilePath)) {
-    New-Item -Path $profilePath -ItemType File -Force
-    Write-Host "Created PowerShell profile at $profilePath"
-}
-
-$currentLocation = Get-Location
-Add-Content $profilePath "function hustle-start { Set-Location '$currentLocation'; make daemon-start }"
-Add-Content $profilePath "function hustle-stop { Set-Location '$currentLocation'; make daemon-stop }"
-Add-Content $profilePath "function hustle-view { Set-Location '$currentLocation'; make view }"
-Add-Content $profilePath "function hustle-status { Set-Location '$currentLocation'; make daemon-status }"
-
-# Reload profile
-. $profilePath
-
-# Start Docker Desktop if not running
-if (!(Get-Process "Docker Desktop" -ErrorAction SilentlyContinue)) {
-    Write-Host "Starting Docker Desktop..."
-    Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-    Write-Host "Waiting for Docker Desktop to start..."
-    Start-Sleep -Seconds 30
-}
-
-# Start the daemon
-make daemon-start
+powershell -Command "iwr -useb https://raw.githubusercontent.com/adolfousier/neura-hustle-tracker/main/scripts/windows-install.ps1 | iex"
 ```
+
+That's it. The script handles everything automatically.
 
 **What this does**: Installs all dependencies, clones repo, starts background tracking, creates global commands.
 

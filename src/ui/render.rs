@@ -1,11 +1,13 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::text::Line;
-use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Borders, List, ListItem, Paragraph};
-use ratatui::style::{Color, Style, Modifier};
-use ratatui::Frame;
-use chrono::Local;
-use std::collections::BTreeMap;
-use crate::ui::app::{App, AppState, InputAction, ViewMode};
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    text::Line,
+    widgets::{Bar, BarChart, BarGroup, Block, Borders, List, ListItem, Paragraph},
+    style::{Color, Style, Modifier},
+    Frame,
+};
+ use chrono::Local;
+ use std::collections::BTreeMap;
+ use crate::ui::app::{App, AppState, InputAction, ViewMode};
 
 pub fn draw(app: &App, f: &mut Frame) {
     let size = f.area();
