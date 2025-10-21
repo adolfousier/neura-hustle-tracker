@@ -40,7 +40,7 @@ pub enum AppState {
     Input { prompt: String, buffer: String, action: InputAction },
     CommandsPopup,
     HistoryPopup { view_mode: ViewMode, scroll_position: usize },
-    BreakdownDashboard { view_mode: ViewMode, scroll_position: usize },
+    BreakdownDashboard { view_mode: ViewMode, selected_panel: usize, panel_scrolls: [usize; 5] },
 }
 
 pub struct App {
@@ -522,10 +522,11 @@ impl App {
                                  };
                                  // Then aggregate breakdown data from current_history
                                  self.load_breakdown_data_from_history();
-                                 self.state = AppState::BreakdownDashboard {
-                                     view_mode: view_mode.clone(),
-                                     scroll_position: 0
-                                 };
+self.state = AppState::BreakdownDashboard {
+                                      view_mode: view_mode.clone(),
+                                      selected_panel: 0,
+                                      panel_scrolls: [0; 5],
+                                  };
                              }
                              _ => {}
                          }
@@ -557,10 +558,11 @@ impl App {
                                  };
                                  // Then aggregate breakdown data from current_history
                                  self.load_breakdown_data_from_history();
-                                 self.state = AppState::BreakdownDashboard {
-                                     view_mode: self.current_view_mode.clone(),
-                                     scroll_position: 0
-                                 };
+self.state = AppState::BreakdownDashboard {
+                                      view_mode: self.current_view_mode.clone(),
+                                      selected_panel: 0,
+                                      panel_scrolls: [0; 5],
+                                  };
                              }
                              _ => {}
                          }
@@ -677,25 +679,31 @@ impl App {
                                      _ => {}
                                  }
                              }
-                             AppState::BreakdownDashboard { view_mode, scroll_position } => {
-                                 match key.code {
-                                     KeyCode::Esc => self.state = AppState::Dashboard { view_mode: view_mode.clone() },
-                                     KeyCode::Char('q') => break,
-                                     KeyCode::Up => {
-                                         *scroll_position = scroll_position.saturating_sub(1);
-                                     }
-                                     KeyCode::Down => {
-                                         *scroll_position = scroll_position.saturating_add(1);
-                                     }
-                                     KeyCode::PageUp => {
-                                         *scroll_position = scroll_position.saturating_sub(5);
-                                     }
-                                     KeyCode::PageDown => {
-                                         *scroll_position = scroll_position.saturating_add(5);
-                                     }
-                                     _ => {}
-                                 }
-                             }
+AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
+                                  match key.code {
+                                      KeyCode::Esc => self.state = AppState::Dashboard { view_mode: view_mode.clone() },
+                                      KeyCode::Char('q') => break,
+                                      KeyCode::Tab => {
+                                          *selected_panel = (*selected_panel + 1) % 5;
+                                      }
+                                      KeyCode::Enter => {
+                                          // Enter selects/highlights the current panel - visual feedback only
+                                      }
+                                      KeyCode::Up => {
+                                          panel_scrolls[*selected_panel] = panel_scrolls[*selected_panel].saturating_sub(1);
+                                      }
+                                      KeyCode::Down => {
+                                          panel_scrolls[*selected_panel] = panel_scrolls[*selected_panel].saturating_add(1);
+                                      }
+                                      KeyCode::PageUp => {
+                                          panel_scrolls[*selected_panel] = panel_scrolls[*selected_panel].saturating_sub(5);
+                                      }
+                                      KeyCode::PageDown => {
+                                          panel_scrolls[*selected_panel] = panel_scrolls[*selected_panel].saturating_add(5);
+                                      }
+                                      _ => {}
+                                  }
+                              }
                              _ => {}
                          }
                      }
@@ -817,8 +825,19 @@ impl App {
         f: &mut Frame,
         area: ratatui::layout::Rect,
         scroll_position: usize,
+        highlighted: bool,
     ) {
-        crate::ui::render::draw_file_breakdown_section(self, f, area, scroll_position);
+        crate::ui::render::draw_file_breakdown_section(self, f, area, scroll_position, highlighted);
+    }
+
+    pub fn draw_file_breakdown_section_with_style(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        scroll_position: usize,
+        style: ratatui::style::Style,
+    ) {
+        crate::ui::render::draw_file_breakdown_section_with_style(self, f, area, scroll_position, style);
     }
 
     pub fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {

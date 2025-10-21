@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::Line;
 use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Borders, List, ListItem, Paragraph};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Style, Modifier};
 use ratatui::Frame;
 use chrono::Local;
 use std::collections::BTreeMap;
@@ -37,7 +37,7 @@ pub fn draw(app: &App, f: &mut Frame) {
         }
         AppState::CommandsPopup => "Commands Menu - Press key to execute or Esc to close".to_string(),
         AppState::HistoryPopup { .. } => "Session History - Use ↑/↓/PgUp/PgDn to scroll, Esc to close".to_string(),
-        AppState::BreakdownDashboard { .. } => "📊 Activity Breakdown Dashboard - [↑/↓/PgUp/PgDn] Scroll | [Esc] Close".to_string(),
+        AppState::BreakdownDashboard { .. } => "📊 Activity Breakdown Dashboard - [Tab] Switch Panels | [Enter] Select | [↑/↓/PgUp/PgDn] Navigate | [Esc] Close".to_string(),
     };
 
     let status_widget = Paragraph::new(status)
@@ -334,7 +334,7 @@ pub fn draw(app: &App, f: &mut Frame) {
             f.render_widget(history_list, popup_area);
         }
 
-        AppState::BreakdownDashboard { view_mode, scroll_position } => {
+        AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
             // Show dashboard in background
             app.draw_dashboard(f, chunks[1], view_mode);
 
@@ -349,43 +349,116 @@ pub fn draw(app: &App, f: &mut Frame) {
                 .style(Style::default().bg(Color::Black));
             f.render_widget(popup_block, popup_area);
 
-            // Inner area for grid layout
+            // Inner area for layout
             let inner_area = popup_area.inner(ratatui::layout::Margin { horizontal: 1, vertical: 1 });
 
-            // Create grid layout: 2 columns x 3 rows
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(34),
-                ].as_ref())
-                .split(inner_area);
+            // Determine layout based on available width
+            let use_vertical_layout = inner_area.width < 100;
 
-            // Row 1: Categories | Browser Services
-            let row1_cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .split(rows[0]);
+            if use_vertical_layout {
+                // Vertical stack layout for small screens
+                let sections = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(20),
+                        Constraint::Percentage(20),
+                        Constraint::Percentage(20),
+                        Constraint::Percentage(20),
+                        Constraint::Percentage(20),
+                    ].as_ref())
+                    .split(inner_area);
 
-            // Row 2: Projects | Files
-            let row2_cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .split(rows[1]);
+                // Render each section with highlighting
+                let category_style = if *selected_panel == 0 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let browser_style = if *selected_panel == 1 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let project_style = if *selected_panel == 2 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let file_style = if *selected_panel == 3 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let terminal_style = if *selected_panel == 4 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
 
-            // Row 3: Terminal Sessions (full width)
-            let row3_area = rows[2];
+                draw_breakdown_section_with_style(f, sections[0], "📦 Categories", &app.category_breakdown, Color::Magenta, true, category_style, panel_scrolls[0]);
+                draw_breakdown_section_with_style(f, sections[1], "🌐 Browser Services", &app.browser_breakdown, Color::Blue, false, browser_style, panel_scrolls[1]);
+                draw_breakdown_section_with_style(f, sections[2], "📁 Projects", &app.project_breakdown, Color::Yellow, false, project_style, panel_scrolls[2]);
+                app.draw_file_breakdown_section_with_style(f, sections[3], panel_scrolls[3], file_style);
+                draw_breakdown_section_with_style(f, sections[4], "💻 Terminal Sessions", &app.terminal_breakdown, Color::Green, false, terminal_style, panel_scrolls[4]);
+            } else {
+                // Grid layout for larger screens
+                let rows = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(34),
+                    ].as_ref())
+                    .split(inner_area);
 
-            // Render each breakdown section
-            draw_breakdown_section(f, row1_cols[0], "📦 Categories", &app.category_breakdown, Color::Magenta, true);
-            draw_breakdown_section(f, row1_cols[1], "🌐 Browser Services", &app.browser_breakdown, Color::Blue, false);
-            draw_breakdown_section(f, row2_cols[0], "📁 Projects", &app.project_breakdown, Color::Yellow, false);
+                // Row 1: Categories | Browser Services
+                let row1_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(rows[0]);
 
-            // Files breakdown with language info
-            app.draw_file_breakdown_section(f, row2_cols[1], *scroll_position);
+                // Row 2: Projects | Files
+                let row2_cols = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(rows[1]);
 
-            draw_breakdown_section(f, row3_area, "💻 Terminal Sessions", &app.terminal_breakdown, Color::Green, false);
+                // Row 3: Terminal Sessions (full width)
+                let row3_area = rows[2];
+
+                // Render each section with highlighting
+                let category_style = if *selected_panel == 0 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let browser_style = if *selected_panel == 1 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let project_style = if *selected_panel == 2 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let file_style = if *selected_panel == 3 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+                let terminal_style = if *selected_panel == 4 {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
+
+                draw_breakdown_section_with_style(f, row1_cols[0], "📦 Categories", &app.category_breakdown, Color::Magenta, true, category_style, panel_scrolls[0]);
+                draw_breakdown_section_with_style(f, row1_cols[1], "🌐 Browser Services", &app.browser_breakdown, Color::Blue, false, browser_style, panel_scrolls[1]);
+                draw_breakdown_section_with_style(f, row2_cols[0], "📁 Projects", &app.project_breakdown, Color::Yellow, false, project_style, panel_scrolls[2]);
+                app.draw_file_breakdown_section_with_style(f, row2_cols[1], panel_scrolls[3], file_style);
+                draw_breakdown_section_with_style(f, row3_area, "💻 Terminal Sessions", &app.terminal_breakdown, Color::Green, false, terminal_style, panel_scrolls[4]);
+            }
         }
     }
 }
@@ -957,6 +1030,7 @@ pub fn draw_breakdown_section(
     data: &[(String, i64)],
     color: Color,
     is_category: bool,
+    highlighted: bool,
 ) {
     let max_items = (area.height.saturating_sub(3) as usize).max(3);
     let mut items: Vec<ListItem> = Vec::new();
@@ -985,8 +1059,14 @@ pub fn draw_breakdown_section(
         }
     }
 
+    let block_style = if highlighted {
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title));
+        .block(Block::default().borders(Borders::ALL).title(title).style(block_style));
     f.render_widget(list, area);
 }
 
@@ -995,6 +1075,7 @@ pub fn draw_file_breakdown_section(
     f: &mut Frame,
     area: Rect,
     _scroll_position: usize,
+    highlighted: bool,
 ) {
     let max_items = (area.height.saturating_sub(3) as usize).max(3);
     let mut items: Vec<ListItem> = Vec::new();
@@ -1016,7 +1097,95 @@ pub fn draw_file_breakdown_section(
         }
     }
 
+    let block_style = if highlighted {
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("📝 Files Edited"));
+        .block(Block::default().borders(Borders::ALL).title("📝 Files Edited").style(block_style));
+    f.render_widget(list, area);
+}
+
+pub fn draw_breakdown_section_with_style(
+    f: &mut Frame,
+    area: Rect,
+    title: &str,
+    data: &[(String, i64)],
+    color: Color,
+    is_category: bool,
+    style: Style,
+    scroll_position: usize,
+) {
+    let max_items = (area.height.saturating_sub(3) as usize).max(3);
+    let mut items: Vec<ListItem> = Vec::new();
+
+    if data.is_empty() {
+        items.push(ListItem::new(Line::from("  No data available")));
+    } else {
+        // Apply scroll position
+        let start_idx = scroll_position.min(data.len().saturating_sub(max_items));
+        let end_idx = (start_idx + max_items).min(data.len());
+        
+        for (name, duration) in data[start_idx..end_idx].iter() {
+            let hours = duration / 3600;
+            let minutes = (duration % 3600) / 60;
+            let time_str = if hours > 0 {
+                format!("{}h {}m", hours, minutes)
+            } else {
+                format!("{}m", minutes)
+            };
+
+            // For categories, extract color from category name
+            let item_color = if is_category {
+                App::category_from_string(name).1
+            } else {
+                color
+            };
+
+            let display = format!("  {}  {}", name, time_str);
+            items.push(ListItem::new(Line::from(display)).style(Style::default().fg(item_color)));
+        }
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title).style(style));
+    f.render_widget(list, area);
+}
+
+pub fn draw_file_breakdown_section_with_style(
+    app: &App,
+    f: &mut Frame,
+    area: Rect,
+    scroll_position: usize,
+    style: Style,
+) {
+    let max_items = (area.height.saturating_sub(3) as usize).max(3);
+    let mut items: Vec<ListItem> = Vec::new();
+
+    if app.file_breakdown.is_empty() {
+        items.push(ListItem::new(Line::from("  No file data available")));
+    } else {
+        // Apply scroll position
+        let start_idx = scroll_position.min(app.file_breakdown.len().saturating_sub(max_items));
+        let end_idx = (start_idx + max_items).min(app.file_breakdown.len());
+        
+        for (filename, language, duration) in app.file_breakdown[start_idx..end_idx].iter() {
+            let hours = duration / 3600;
+            let minutes = (duration % 3600) / 60;
+            let time_str = if hours > 0 {
+                format!("{}h {}m", hours, minutes)
+            } else {
+                format!("{}m", minutes)
+            };
+
+            let display = format!("  {} ({})  {}", filename, language, time_str);
+            items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Cyan)));
+        }
+    }
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("📝 Files Edited").style(style));
     f.render_widget(list, area);
 }
