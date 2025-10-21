@@ -118,7 +118,64 @@ echo "Please download and install Docker Desktop from https://docs.docker.com/de
 ### Windows (PowerShell)
 
 ```powershell
-winget install --id=Rustlang.Rustup -e; winget install --id=GnuWin32.Make -e; winget install --id=Docker.DockerDesktop -e; winget install --id=Git.Git -e; git clone https://github.com/adolfousier/neura-hustle-tracker.git; cd neura-hustle-tracker; $env:PATH += ";$env:USERPROFILE\.cargo\bin"; if (!(Test-Path .env)) { $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"; $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256)); "POSTGRES_USERNAME=$USERNAME`nPOSTGRES_PASSWORD=$PASSWORD`nDATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker" | Out-File .env -Encoding UTF8 }; if (!(Test-Path $PROFILE)) { New-Item -Path $PROFILE -ItemType File -Force }; Add-Content $PROFILE "function hustle-start { Set-Location '$(Get-Location)'; make daemon-start }"; Add-Content $PROFILE "function hustle-stop { Set-Location '$(Get-Location)'; make daemon-stop }"; Add-Content $PROFILE "function hustle-view { Set-Location '$(Get-Location)'; make view }"; Add-Content $PROFILE "function hustle-status { Set-Location '$(Get-Location)'; make daemon-status }"; . $PROFILE; make daemon-start;
+# Check if winget is available
+if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+    Write-Error "winget is not available. Please install Windows Package Manager or update Windows."
+    exit 1
+}
+
+# Install dependencies
+winget install --id=Rustlang.Rustup.MSVC -e --accept-package-agreements --accept-source-agreements
+winget install --id=GnuWin32.Make -e --accept-package-agreements --accept-source-agreements
+winget install --id=Docker.DockerDesktop -e --accept-package-agreements --accept-source-agreements
+winget install --id=Git.Git -e --accept-package-agreements --accept-source-agreements
+
+# Clone repository
+git clone https://github.com/adolfousier/neura-hustle-tracker.git
+cd neura-hustle-tracker
+
+# Add Rust to PATH for current session
+$env:PATH += ";$env:USERPROFILE\.cargo\bin"
+
+# Create .env file if it doesn't exist
+if (!(Test-Path .env)) {
+    $USERNAME = "timetracker_$((Get-Random -Maximum 65535).ToString('X4'))"
+    $PASSWORD = [Convert]::ToBase64String((Get-Random -Count 16 -Maximum 256))
+    $envContent = @"
+POSTGRES_USERNAME=$USERNAME
+POSTGRES_PASSWORD=$PASSWORD
+DATABASE_URL=postgres://$USERNAME`:$PASSWORD@localhost:5432/hustle-tracker
+"@
+    $envContent | Out-File .env -Encoding UTF8
+    Write-Host "Created .env file with auto-generated credentials"
+}
+
+# Create PowerShell profile functions
+$profilePath = "$env:USERPROFILE\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1"
+if (!(Test-Path $profilePath)) {
+    New-Item -Path $profilePath -ItemType File -Force
+    Write-Host "Created PowerShell profile at $profilePath"
+}
+
+$currentLocation = Get-Location
+Add-Content $profilePath "function hustle-start { Set-Location '$currentLocation'; make daemon-start }"
+Add-Content $profilePath "function hustle-stop { Set-Location '$currentLocation'; make daemon-stop }"
+Add-Content $profilePath "function hustle-view { Set-Location '$currentLocation'; make view }"
+Add-Content $profilePath "function hustle-status { Set-Location '$currentLocation'; make daemon-status }"
+
+# Reload profile
+. $profilePath
+
+# Start Docker Desktop if not running
+if (!(Get-Process "Docker Desktop" -ErrorAction SilentlyContinue)) {
+    Write-Host "Starting Docker Desktop..."
+    Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+    Write-Host "Waiting for Docker Desktop to start..."
+    Start-Sleep -Seconds 30
+}
+
+# Start the daemon
+make daemon-start
 ```
 
 **What this does**: Installs all dependencies, clones repo, starts background tracking, creates global commands.
