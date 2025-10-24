@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.7 (2025-10-24)
+
+- **Breaking Change: PostgreSQL Port Update**: Changed default PostgreSQL port from 5432 to 52851 to avoid conflicts with other services.
+  - Updated `compose.yml` to expose port 52851 and set `PGPORT=52851` for internal container configuration.
+  - Updated `src/config/settings.rs` to generate DATABASE_URL with port 52851.
+  - Updated `.env.example` to reflect the new port.
+  - **Migration for Existing Users**:
+    1. Backup your database: `docker exec neura-hustle-tracker-postgres-1 pg_dump -U ${POSTGRES_USERNAME} -d hustle-tracker > backup.sql`
+    2. Pull the latest changes.
+    3. Update your `.env` DATABASE_URL to use `localhost:52851` instead of `localhost:5432`.
+    4. Stop the database: `docker compose down`
+    5. Restart: `docker compose up -d`
+    6. If data is missing, restore: `docker exec -i neura-hustle-tracker-postgres-1 psql -U ${POSTGRES_USERNAME} -d hustle-tracker < backup.sql`
+    7. **For users who prefer to keep the old port**: Stay on the previous commit (before v0.3.7) where the port is 5432. The code in older commits uses 5432, so no changes needed. New users will use 52851 by default.
+- **Windows Makefile Fix**: Fixed `db-up` target to use cross-platform sleep command (`timeout /t 5 /nobreak >nul` on Windows, `sleep 5` on Unix) to resolve "sleep command not found" error on Windows.
+
 ## v0.3.6 (2025-10-24)
 
 - **Cross-Platform Tracking Enhancements**: Added platform-specific inspection modules for Windows (`windows_inspection.rs`) and macOS (`macos_inspection.rs`) in daemon mode, and improved Linux X11/Wayland process inspection (`process_inspection.rs`) with tmux session detection, editor file tracking, and child process enumeration.

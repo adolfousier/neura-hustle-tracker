@@ -65,7 +65,7 @@ db-up:
 	@echo "Starting PostgreSQL..."
 	docker compose up -d
 	@echo "Waiting for database to be ready..."
-	@sleep 5
+	@$(SLEEP)
 
 # Check for Wayland and install extension if needed (Linux only)
 check-wayland:
