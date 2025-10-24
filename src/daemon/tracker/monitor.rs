@@ -1,6 +1,10 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
 use std::env;
+#[cfg(target_os = "windows")]
+use super::windows_inspection;
+#[cfg(target_os = "macos")]
+use super::macos_inspection;
 
 #[derive(serde::Deserialize, Debug)]
 struct WindowInfo {
@@ -10,6 +14,22 @@ struct WindowInfo {
     title: String,
     #[serde(default)]
     focus: bool,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct ProcessInfo {
+    has_tmux: bool,
+    tmux_session: Option<String>,
+    tmux_window: Option<String>,
+    editor_info: Option<EditorInfo>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug)]
+struct EditorInfo {
+    filename: String,
+    filepath: String,
 }
 
 pub struct AppMonitor {
@@ -69,6 +89,161 @@ impl AppMonitor {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    #[cfg(target_os = "linux")]
+    fn inspect_process_tree(pid: u64) -> Option<ProcessInfo> {
+        let mut info = ProcessInfo {
+            has_tmux: false,
+            tmux_session: None,
+            tmux_window: None,
+            editor_info: None,
+        };
+
+        // Get child processes recursively
+        let children = Self::get_child_processes(pid);
+
+        for child_pid in children {
+            if let Some(cmdline) = Self::get_process_cmdline(child_pid) {
+                let cmd = cmdline.split('\0').next().unwrap_or("");
+
+                // Check for tmux
+                if cmd.contains("tmux") {
+                    info.has_tmux = true;
+                    // Try to get session name from cmdline
+                    for arg in cmdline.split('\0').skip(1) {
+                        if arg.starts_with("-t") || arg.starts_with("-s") {
+                            if let Some(session) = arg.split('=').nth(1).or_else(|| arg.split(' ').nth(1)) {
+                                info.tmux_session = Some(session.to_string());
+                            }
+                        }
+                    }
+                }
+
+                // Check for vim/neovim
+                if cmd.ends_with("vim") || cmd.ends_with("nvim") || cmd == "vim" || cmd == "nvim" {
+                    let args: Vec<&str> = cmdline.split('\0').collect();
+                    if args.len() > 1 {
+                        let file_arg = args.last().unwrap();
+                        if !file_arg.starts_with('-') && !file_arg.is_empty() {
+                            // Try to resolve to absolute path
+                            let filepath = std::fs::canonicalize(file_arg).unwrap_or_else(|_| std::path::PathBuf::from(file_arg));
+                            let filename = std::path::Path::new(&filepath)
+                                .file_name()
+                                .unwrap_or_else(|| std::ffi::OsStr::new(file_arg))
+                                .to_string_lossy()
+                                .to_string();
+
+                            info.editor_info = Some(EditorInfo {
+                                filename,
+                                filepath: filepath.to_string_lossy().to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // If tmux detected, try to get the current window name
+        if info.has_tmux {
+            let session_arg = if let Some(ref session) = info.tmux_session {
+                format!("-t {}", session)
+            } else {
+                "".to_string()
+            };
+            let cmd = format!("tmux list-windows {} -F \"#{{window_name}}:#{{window_active}}\"", session_arg);
+            if let Ok(output) = std::process::Command::new("sh").arg("-c").arg(&cmd).output() {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        if let Some(colon) = line.rfind(':') {
+                            let active = &line[colon + 1..];
+                            if active == "1" {
+                                let window_name = line[..colon].to_string();
+                                info.tmux_window = Some(window_name);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Some(info)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn get_child_processes(pid: u64) -> Vec<u64> {
+        let mut children = Vec::new();
+
+        // Read /proc/<pid>/task/<pid>/children
+        let children_path = format!("/proc/{}/task/{}/children", pid, pid);
+        if let Ok(content) = std::fs::read_to_string(&children_path) {
+            for child in content.split_whitespace() {
+                if let Ok(child_pid) = child.parse::<u64>() {
+                    children.push(child_pid);
+                    // Recursively get grandchildren
+                    children.extend(Self::get_child_processes(child_pid));
+                }
+            }
+        }
+
+        children
+    }
+
+    #[cfg(target_os = "linux")]
+    fn get_process_cmdline(pid: u64) -> Option<String> {
+        let cmdline_path = format!("/proc/{}/cmdline", pid);
+        std::fs::read_to_string(&cmdline_path).ok()
+    }
+
+    async fn get_active_window_x11() -> Result<(String, String)> {
+        use std::process::Command;
+
+        // Get focused window ID
+        let window_id_output = Command::new("xdotool")
+            .arg("getwindowfocus")
+            .output()?;
+
+        if !window_id_output.status.success() {
+            return Err(anyhow::anyhow!("xdotool getwindowfocus failed"));
+        }
+
+        let wid = String::from_utf8_lossy(&window_id_output.stdout).trim().to_string();
+
+        // Get window name
+        let title_output = Command::new("xdotool")
+            .arg("getwindowname")
+            .arg(&wid)
+            .output()?;
+
+        if !title_output.status.success() {
+            return Err(anyhow::anyhow!("xdotool getwindowname failed"));
+        }
+
+        let title = String::from_utf8_lossy(&title_output.stdout).trim().to_string();
+
+        // Get WM_CLASS
+        let wm_class_output = Command::new("xprop")
+            .arg("-id")
+            .arg(&wid)
+            .arg("WM_CLASS")
+            .output()?;
+
+        if !wm_class_output.status.success() {
+            return Err(anyhow::anyhow!("xprop WM_CLASS failed"));
+        }
+
+        let wm_class_str = String::from_utf8_lossy(&wm_class_output.stdout);
+        let class = wm_class_str
+            .lines()
+            .find(|line| line.contains("WM_CLASS"))
+            .and_then(|line| line.split('"').nth(1))
+            .unwrap_or("")
+            .to_string();
+
+        Ok((class, title))
+    }
+
     async fn get_active_window_wayland() -> Result<(String, String)> {
         let connection = zbus::Connection::session().await?;
 
@@ -92,36 +267,110 @@ impl AppMonitor {
         Ok((focused_window.wm_class.clone(), focused_window.title.clone()))
     }
 
-    // Get both app and window info in a single call (more efficient for macOS AppleScript)
+    // Get both app and window info in a single call
     pub async fn get_active_window_info_async(&self) -> Result<(String, Option<String>)> {
-        if self.use_wayland {
-            match Self::get_active_window_wayland().await {
-                Ok((wm_class, title)) => {
-                    let app_name = self.fix_app_name(wm_class);
-                    return Ok((app_name, Some(title)));
-                }
-                Err(_) => return Err(anyhow::anyhow!("Wayland detection failed")),
-            }
-        }
-
-        // Try active-win-pos-rs first
+        // Try active-win-pos-rs first (works for X11 and some Wayland compositors)
         match get_active_window() {
             Ok(active_window) => {
                 let app_name = self.fix_app_name(active_window.app_name.clone());
-                let window_title = if active_window.title.is_empty() || active_window.title == active_window.app_name {
+                log::info!("Detected app: {}", app_name);
+                let mut window_title = if active_window.title.is_empty() || active_window.title == active_window.app_name {
                     None
                 } else {
-                    Some(active_window.title)
+                    Some(active_window.title.clone())
                 };
+                // Enhance title for terminal apps if process_id is available
+                if Self::is_terminal_app(&app_name) {
+                    let current_title = window_title.as_deref().unwrap_or("");
+                    log::info!("Main path terminal title before enhancement: '{}'", current_title);
+                    // Extract directory from prompt if it looks like a shell prompt
+                    let mut enhanced = if current_title.contains("@") && current_title.contains(": ") {
+                        current_title.split(": ").last().unwrap_or(current_title).to_string()
+                    } else {
+                        current_title.to_string()
+                    };
+                    log::info!("Main path terminal title after directory extraction: '{}'", enhanced);
+
+                    if active_window.process_id != 0 {
+                        let pid = active_window.process_id as u64;
+                        enhanced = {
+                            #[cfg(target_os = "windows")]
+                            { super::windows_inspection::enhance_windows_title(&enhanced, pid) }
+                            #[cfg(target_os = "macos")]
+                            { super::macos_inspection::enhance_macos_title(&enhanced, pid) }
+                             #[cfg(target_os = "linux")]
+                             { if let Some(info) = Self::inspect_process_tree(pid) {
+                                 let mut title = enhanced;
+                                 if let Some(window) = info.tmux_window {
+                                     title = format!("{} - {}", window, title);
+                                 } else if info.has_tmux {
+                                     let session = info.tmux_session.unwrap_or("session".to_string());
+                                     title = format!("tmux: {} - {}", session, title);
+                                 }
+                                 if let Some(editor) = info.editor_info {
+                                     title = format!("{} ({}) - {}", editor.filename, editor.filepath, title);
+                                 }
+                                 title
+                             } else {
+                                 enhanced
+                             } }
+                        };
+                    }
+
+                    if enhanced != current_title {
+                        window_title = Some(enhanced);
+                    }
+                }
                 return Ok((app_name, window_title));
             }
             Err(_) => {
-                // On macOS, fallback to AppleScript
+                // Fallbacks based on platform/session type
+                if self.use_wayland {
+                    // Try GNOME extension for Wayland
+                    match Self::get_active_window_wayland().await {
+                        Ok((wm_class, title)) => {
+                            let app_name = self.fix_app_name(wm_class);
+                            return Ok((app_name, Some(title)));
+                        }
+                        Err(_) => {}
+                    }
+                } else {
+                    // Try GNOME extension for Wayland
+                    match Self::get_active_window_wayland().await {
+                        Ok((wm_class, mut title)) => {
+                            log::info!("Wayland fallback title: '{}'", title);
+                            let app_name = self.fix_app_name(wm_class);
+                            // Extract directory from prompt if it looks like a shell prompt
+                            if Self::is_terminal_app(&app_name) && title.contains("@") && title.contains(": ") {
+                                if let Some(dir) = title.split(": ").last() {
+                                    title = dir.to_string();
+                                    log::info!("Wayland fallback title after extraction: '{}'", title);
+                                }
+                            }
+                            return Ok((app_name, Some(title)));
+                        }
+                        Err(_) => {
+                            // Try xdotool/xprop for X11
+                            #[cfg(target_os = "linux")]
+                            {
+                                if let Ok((wm_class, title)) = Self::get_active_window_x11().await {
+                                    let app_name = self.fix_app_name(wm_class);
+                                    return Ok((app_name, Some(title)));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // macOS AppleScript fallback
                 #[cfg(target_os = "macos")]
                 {
-                    if let Ok((app, title)) = Self::get_active_window_info_macos().await {
+                    if let Ok((app, title, pid)) = Self::get_active_window_info_macos().await {
                         let app_name = self.fix_app_name(app);
-                        let window_title = if title.is_empty() { None } else { Some(title) };
+                        let mut window_title = if title.is_empty() { None } else { Some(title) };
+                        if Self::is_terminal_app(&app_name) {
+                            window_title = Some(macos_inspection::enhance_macos_title(&window_title.unwrap_or_default(), pid));
+                        }
                         return Ok((app_name, window_title));
                     }
                 }
@@ -168,7 +417,7 @@ impl AppMonitor {
     }
 
     #[cfg(target_os = "macos")]
-    async fn get_active_window_info_macos() -> Result<(String, String)> {
+    async fn get_active_window_info_macos() -> Result<(String, String, u64)> {
         use std::process::Command;
 
         // Comprehensive AppleScript that tries app-specific methods for browsers and terminals
@@ -176,6 +425,7 @@ impl AppMonitor {
             tell application "System Events"
                 set frontApp to first application process whose frontmost is true
                 set appName to name of frontApp
+                set pid to unix id of frontApp
             end tell
 
             -- Try application-specific methods for common apps
@@ -183,35 +433,35 @@ impl AppMonitor {
                 tell application "Firefox"
                     try
                         set windowTitle to name of front window
-                        return appName & "|" & windowTitle
+                        return appName & "|" & windowTitle & "|" & pid
                     end try
                 end tell
             else if appName contains "Chrome" or appName contains "Brave" or appName contains "Chromium" then
                 tell application appName
                     try
                         set windowTitle to title of active tab of front window
-                        return appName & "|" & windowTitle
+                        return appName & "|" & windowTitle & "|" & pid
                     end try
                 end tell
             else if appName contains "Safari" then
                 tell application "Safari"
                     try
                         set windowTitle to name of front document
-                        return appName & "|" & windowTitle
+                        return appName & "|" & windowTitle & "|" & pid
                     end try
                 end tell
             else if appName contains "Terminal" or appName is "Terminal" then
                 tell application "Terminal"
                     try
                         set windowTitle to name of front window
-                        return appName & "|" & windowTitle
+                        return appName & "|" & windowTitle & "|" & pid
                     end try
                 end tell
             else if appName contains "iTerm" or appName is "iTerm2" then
                 tell application "iTerm"
                     try
                         set windowTitle to name of current session of current window
-                        return appName & "|" & windowTitle
+                        return appName & "|" & windowTitle & "|" & pid
                     end try
                 end tell
             else if appName contains "Alacritty" or appName is "Alacritty" or appName is "alacritty" then
@@ -219,7 +469,7 @@ impl AppMonitor {
                     tell process "Alacritty"
                         try
                             set windowTitle to name of front window
-                            return appName & "|" & windowTitle
+                            return appName & "|" & windowTitle & "|" & pid
                         end try
                     end tell
                 end tell
@@ -230,9 +480,9 @@ impl AppMonitor {
                 tell process appName
                     try
                         set windowTitle to name of front window
-                        return appName & "|" & windowTitle
+                        return appName & "|" & windowTitle & "|" & pid
                     on error
-                        return appName & "|"
+                        return appName & "|" & "|" & pid
                     end try
                 end tell
             end tell
@@ -246,14 +496,16 @@ impl AppMonitor {
         if output.status.success() {
             let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-            if let Some((app, title)) = result.split_once('|') {
-                let app_name = app.trim().to_string();
-                let window_title = title.trim().to_string();
+            let parts: Vec<&str> = result.split('|').collect();
+            if parts.len() >= 3 {
+                let app_name = parts[0].trim().to_string();
+                let window_title = parts[1].trim().to_string();
+                if let Ok(pid) = parts[2].trim().parse::<u64>() {
+                    log::debug!("AppleScript returned: app='{}', title='{}', pid={}", app_name, window_title, pid);
 
-                log::debug!("AppleScript returned: app='{}', title='{}'", app_name, window_title);
-
-                if !app_name.is_empty() {
-                    return Ok((app_name, window_title));
+                    if !app_name.is_empty() {
+                        return Ok((app_name, window_title, pid));
+                    }
                 }
             }
         } else {
@@ -359,6 +611,19 @@ impl AppMonitor {
         Err(anyhow::anyhow!("Failed to get window title via PowerShell"))
     }
 
+    fn is_terminal_app(app: &str) -> bool {
+        let app_lower = app.to_lowercase();
+        app_lower.contains("terminal") ||
+        app_lower.contains("iterm") ||
+        app_lower.contains("alacritty") ||
+        app_lower.contains("cmd") ||
+        app_lower.contains("powershell") ||
+        app_lower.contains("wt") ||
+        app_lower == "hyper" ||
+        app_lower == "tabby" ||
+        app_lower == "warp"
+    }
+
     fn fix_app_name(&self, app: String) -> String {
         let app_lower = app.to_lowercase();
 
@@ -444,7 +709,7 @@ mod tests {
         let monitor = AppMonitor::new();
         // Note: This test may fail if no active window is available
         match monitor.get_active_window_info_async().await {
-            Ok((app, window_title)) => {
+            Ok((app, _window_title)) => {
                 assert!(!app.is_empty());
                 // window_title can be None, which is fine
             }

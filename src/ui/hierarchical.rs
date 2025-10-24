@@ -69,7 +69,7 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDispla
             continue;
         }
 
-        let app_name = session.app_name.clone();
+        let app_name = session.app_name.trim().to_string();
 
         // Determine sub-entry unique ID, display name, and category
         let (sub_entry_unique_id, sub_entry_display_name, sub_entry_category) = if let Some(page_title) = &session.browser_page_title {
@@ -135,7 +135,7 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDispla
                 if sub_entry_id != "(general)" {
                     result.push(HierarchicalDisplayItem {
             parent_app_name: Some(app_name.clone()),
-                        display_name: format!("  {}", display_name),
+                        display_name: format!("└─ {}", display_name.trim()),
                         unique_id: sub_entry_id.clone(),
                         duration: *duration,
                         category: category.clone(),

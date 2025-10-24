@@ -495,8 +495,8 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
         ViewMode::Monthly => (app.monthly_usage.clone(), "📊 Monthly Usage (30 days)"),
     };
 
-    // Create a mutable clone to sort for the bar chart
-    let mut sorted_bar_data = data.clone();
+    // Create a mutable clone to sort for the bar chart, filtering out sub-entries
+    let mut sorted_bar_data: Vec<_> = data.iter().filter(|item| !item.is_sub_entry).cloned().collect();
     sorted_bar_data.sort_by(|a, b| b.duration.cmp(&a.duration));
 
     // Create bar chart data - limit based on space
@@ -624,10 +624,15 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
                     format!("{}h{}m", hours, mins)
                 };
 
-                let clean_app = App::clean_app_name(&item.display_name);
+                let clean_app = App::clean_app_name(&item.display_name).trim().to_string();
+                let label = if clean_app.len() > bar_width as usize {
+                    format!("{:<width$.width$}", &clean_app[..bar_width as usize], width = bar_width as usize)
+                } else {
+                    format!("{:<width$}", clean_app, width = bar_width as usize)
+                };
                 Bar::default()
                     .value(value_minutes)
-                    .label(Line::from(clean_app))
+                    .label(Line::from(label))
                     .text_value(value_label)
                     .style(Style::default().fg(color))
                     .value_style(Style::default().fg(Color::White))
@@ -690,8 +695,8 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
 
         // Format display based on whether it's a parent or child entry
         let display = if is_child {
-            // Child entries are already indented, just add time
-            format!("{}  {}", app_display, time_str)
+            // Child entries need indentation
+            format!("  {}  {}", app_display, time_str)
         } else {
             // Parent entries
             format!("  {} - {}", app_display, time_str)

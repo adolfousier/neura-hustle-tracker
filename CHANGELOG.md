@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.6 (2025-10-24)
+
+- **Cross-Platform Tracking Enhancements**: Added platform-specific inspection modules for Windows (`windows_inspection.rs`) and macOS (`macos_inspection.rs`) in daemon mode, and improved Linux X11/Wayland process inspection (`process_inspection.rs`) with tmux session detection, editor file tracking, and child process enumeration.
+- **UI Fixes**: Trimmed display names to remove whitespace issues, updated hierarchical prefixes to "└─ " for better readability, filtered sub-entries from bar chart to prevent prefix display, and fixed bar chart label padding to eliminate invisible prefixes causing double spaces in daily usage chart.
+- **Documentation**: Simplified README.md by removing verbose sections and comparisons, added streamlined quick start guides for all platforms, updated demo screenshots to use GIF animation.
+- **Asset Updates**: Replaced static PNG screenshots with animated GIF demo, removed outdated demo images.
+
 ## v0.3.4 (2025-10-19)
 
 - **Hierarchical View**: Implemented a hierarchical view for application usage, allowing sub-entries for detailed tracking of activities within applications (e.g., browser tabs, terminal projects, editor files).

@@ -1,6 +1,8 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
 use std::env;
+#[cfg(target_os = "linux")]
+use super::process_inspection;
 
 #[derive(serde::Deserialize, Debug)]
 struct WindowInfo {
@@ -180,7 +182,15 @@ impl AppMonitor {
         if self.use_wayland {
             // Use Wayland D-Bus method
             match Self::get_active_window_wayland().await {
-                Ok((_wm_class, title)) => Ok(title),
+                Ok((_wm_class, mut title)) => {
+                    // Extract directory from prompt if it looks like a shell prompt
+                    if title.contains("@") && title.contains(": ") {
+                        if let Some(dir) = title.split(": ").last() {
+                            title = dir.to_string();
+                        }
+                    }
+                    Ok(title)
+                },
                 Err(_) => {
                     log::warn!("Failed to get active window title (Wayland).");
                     Ok("Unknown Window".to_string())
@@ -190,7 +200,7 @@ impl AppMonitor {
             // Use platform-specific native APIs
             match get_active_window() {
                 Ok(active_window) => {
-                    let title = active_window.title.clone();
+                    let mut title = active_window.title.clone();
 
                     // On macOS, if we get a generic title (app name only), try AppleScript fallback
                     #[cfg(target_os = "macos")]
@@ -218,6 +228,31 @@ impl AppMonitor {
                                     return Ok(detailed_title);
                                 }
                             }
+                        }
+                    }
+
+                    // On Linux, enhance title with process inspection
+                    #[cfg(target_os = "linux")]
+                    {
+                        // First, extract directory from prompt if it looks like a shell prompt
+                        if title.contains("@") && title.contains(": ") {
+                            if let Some(dir) = title.split(": ").last() {
+                                title = dir.to_string();
+                            }
+                        }
+                        let pid = active_window.process_id;
+                        if pid != 0 {
+                             if let Some(info) = process_inspection::inspect_process_tree(pid) {
+                                 if let Some(window) = info.tmux_window {
+                                     title = format!("{} - {}", window, title);
+                                 } else if info.has_tmux {
+                                     let session = info.tmux_session.unwrap_or("session".to_string());
+                                     title = format!("tmux: {} - {}", session, title);
+                                 }
+                                 if let Some(editor) = info.editor_info {
+                                     title = format!("{} ({}) - {}", editor.filename, editor.filepath, title);
+                                 }
+                             }
                         }
                     }
 
