@@ -5,9 +5,8 @@ services:
       POSTGRES_DB: hustle-tracker
       POSTGRES_USER: ${POSTGRES_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      PGPORT: 52851 # This changes PostgreSQL's internal port
     ports:
-      - "52851:52851"
+      - "52851:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
