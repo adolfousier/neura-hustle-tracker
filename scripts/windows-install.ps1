@@ -3,11 +3,39 @@
 
 Write-Host "Installing Neura Hustle Tracker dependencies..." -ForegroundColor Green
 
-# Install required packages
-winget install --id=Rustlang.Rustup -e
-winget install --id=GnuWin32.Make -e
-winget install --id=Docker.DockerDesktop -e
-winget install --id=Git.Git -e
+# Function to check if a package is installed and handle upgrade prompt
+function Install-OrUpgradePackage {
+    param (
+        [string]$PackageId,
+        [string]$FriendlyName
+    )
+    
+    Write-Host "`nChecking $FriendlyName..." -ForegroundColor Cyan
+    
+    # Check if package is already installed
+    $installed = winget list --id $PackageId --exact 2>$null
+    
+    if ($LASTEXITCODE -eq 0 -and $installed -match $PackageId) {
+        Write-Host "$FriendlyName is already installed." -ForegroundColor Yellow
+        $response = Read-Host "Would you like to upgrade it? (y/n)"
+        
+        if ($response -eq 'y' -or $response -eq 'Y') {
+            Write-Host "Upgrading $FriendlyName..." -ForegroundColor Green
+            winget upgrade --id=$PackageId -e --silent
+        } else {
+            Write-Host "Continuing with installed version of $FriendlyName." -ForegroundColor Green
+        }
+    } else {
+        Write-Host "Installing $FriendlyName..." -ForegroundColor Green
+        winget install --id=$PackageId -e --silent
+    }
+}
+
+# Install/upgrade required packages
+Install-OrUpgradePackage -PackageId "Rustlang.Rustup" -FriendlyName "Rust"
+Install-OrUpgradePackage -PackageId "GnuWin32.Make" -FriendlyName "Make"
+Install-OrUpgradePackage -PackageId "Docker.DockerDesktop" -FriendlyName "Docker Desktop"
+Install-OrUpgradePackage -PackageId "Git.Git" -FriendlyName "Git"
 
 # Refresh PATH after installations
 $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
@@ -60,7 +88,7 @@ Add-Content $PROFILE "function hustle-status { Set-Location '$currentPath'; make
 . $PROFILE
 
 # Check if Docker is running
-Write-Host "Checking Docker..." -ForegroundColor Green
+Write-Host "`nChecking Docker..." -ForegroundColor Green
 try {
     & docker version 2>$null | Out-Null
     Write-Host "Docker is running." -ForegroundColor Green
@@ -69,7 +97,7 @@ try {
     exit 1
 }
 
-Write-Host "Starting daemon..." -ForegroundColor Green
+Write-Host "`nStarting daemon..." -ForegroundColor Green
 & "C:\Program Files (x86)\GnuWin32\bin\make.exe" daemon-start
 
-Write-Host "Installation complete! Use hustle-start, hustle-stop, hustle-view, and hustle-status commands." -ForegroundColor Cyan
+Write-Host "`nInstallation complete! Use hustle-start, hustle-stop, hustle-view, and hustle-status commands." -ForegroundColor Cyan
