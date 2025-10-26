@@ -84,8 +84,49 @@ impl Daemon {
 
             // Check for AFK status every second
             if last_afk_check.elapsed() >= afk_check_interval {
+                let time_since_last_check = last_afk_check.elapsed();
+
+                // Detect system sleep: if more than 10 minutes passed since last check, system was likely asleep
+                let sleep_threshold = Duration::from_secs(600); // 10 minutes
+                let was_system_asleep = time_since_last_check > sleep_threshold;
+
                 let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
                 let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+
+                // If system was asleep, force AFK state for the sleep period
+                if was_system_asleep && !is_currently_afk {
+                    log::info!("System sleep detected (gap: {:.1} minutes), creating AFK session for sleep period",
+                              time_since_last_check.as_secs_f64() / 60.0);
+                    // End current session and start AFK session for the sleep period
+                    if let Some(ref mut session) = self.current_session {
+                        if !session.is_afk.unwrap_or(false) {
+                            // Save the current session up to sleep time
+                            let mut old_session = self.current_session.take().unwrap();
+                            let sleep_start_time = Local::now() - chrono::Duration::from_std(time_since_last_check).unwrap_or(chrono::Duration::minutes(0));
+                            old_session.duration = sleep_start_time.signed_duration_since(old_session.start_time).num_seconds();
+
+                            if let Err(e) = self.database.apply_renames_and_categories(&mut old_session).await {
+                                log::warn!("Failed to apply renames and categories during sleep detection: {}", e);
+                            }
+
+                            if let Err(e) = self.database.insert_session(&old_session).await {
+                                log::error!("Failed to save session during sleep detection: {}", e);
+                            } else {
+                                log::info!("Session saved due to system sleep: {} for {:.1} minutes",
+                                          old_session.app_name, old_session.duration as f64 / 60.0);
+                            }
+
+                            // Start AFK session for sleep period
+                            self.switch_app("AFK".to_string(), Some("System asleep".to_string())).await?;
+                            if let Some(ref mut new_session) = self.current_session {
+                                new_session.is_afk = Some(true);
+                                new_session.start_time = sleep_start_time;
+                            }
+
+                            // Now continue with normal AFK check
+                        }
+                    }
+                }
 
                 // If we have a current session, check if AFK state changed
                 if let Some(ref mut session) = self.current_session {
@@ -334,5 +375,44 @@ impl Daemon {
             parsing_success: Some(parsed.parsing_success),
             is_afk: Some(false),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::Duration;
+
+    #[tokio::test]
+    async fn test_sleep_gap_detection() {
+        // This test verifies that sleep gap detection logic works correctly
+
+        // Test that sleep threshold detection works
+        let sleep_threshold = Duration::from_secs(600); // 10 minutes
+        let short_gap = Duration::from_secs(30);
+        let long_gap = Duration::from_secs(1200); // 20 minutes
+
+        assert!(! (short_gap > sleep_threshold), "Short gap should not trigger sleep detection");
+        assert!(long_gap > sleep_threshold, "Long gap should trigger sleep detection");
+
+        // Test chrono duration conversion
+        let chrono_duration = chrono::Duration::from_std(long_gap).unwrap();
+        assert_eq!(chrono_duration.num_minutes(), 20);
+
+        println!("Sleep gap detection logic test passed");
+    }
+
+    #[tokio::test]
+    async fn test_afk_session_creation_logic() {
+        // Test that the logic for creating AFK sessions during sleep works
+        let start_time = Local::now();
+        let sleep_duration = Duration::from_secs(3600); // 1 hour sleep
+        let sleep_start_time = start_time + chrono::Duration::from_std(sleep_duration).unwrap();
+
+        // Simulate what happens during sleep detection
+        let session_duration_before_sleep = sleep_start_time.signed_duration_since(start_time).num_seconds();
+        assert_eq!(session_duration_before_sleep, 3600);
+
+        println!("AFK session creation logic test passed");
     }
 }

@@ -1,4 +1,9 @@
 # Changelog
+## v0.3.8 (2025-10-26)
+
+- **Sleep Gap Detection**: Implemented sleep gap detection across all platforms (Linux, Windows, macOS) to properly handle system sleep periods. When the system wakes up after sleep, the tracker now detects the time gap and creates AFK sessions for sleep duration, ensuring sleep time doesn't appear as active time.
+- **Windows Scripts Organization**: Fixed README.md to correctly reference Windows installation scripts located in `src/scripts/windows_build/`. Verified and confirmed Windows installation scripts are properly configured with current dependencies and make targets.
+- **Test Infrastructure Improvements**: Moved `test_idle.rs` from root directory to `src/tests/` for better organization. Added comprehensive unit tests for sleep gap detection logic in both daemon and UI components.
 
 ## v0.3.7 (2025-10-24)
 

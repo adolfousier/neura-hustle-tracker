@@ -18,7 +18,7 @@ This app runs in your terminal and shows you exactly where your time goes during
 
 - **Tracks your app usage** - Automatically monitors which programs you're using
 - **Shows pretty charts** - See your time broken down by app and category
-- **Saves your data** - Everything stored in your own PostgreSQL database
+- **Saves your data** - Everything stored locally in your own PostgreSQL database
 - **Works everywhere** - Linux, macOS, and Windows
 
 ## Quick Start (Easiest Way)
@@ -51,7 +51,7 @@ brew install make git rustup-init && rustup-init -y && source ~/.cargo/env && gi
 3. Run this:
 
 ```powershell
-powershell -Command "iwr -useb https://raw.githubusercontent.com/adolfousier/neura-hustle-tracker/main/scripts/windows-install.ps1 | iex"
+powershell -Command "iwr -useb https://raw.githubusercontent.com/adolfousier/neura-hustle-tracker/main/src/scripts/windows_build/windows-install.ps1 | iex"
 ```
 
 4. View your stats anytime: `hustle-view`
@@ -96,6 +96,7 @@ You need two steps because of how these systems work:
 Why? On macOS/Windows, if the tracking runs in the dashboard window, it can't see when you switch to other apps. Running it in the background fixes this.
 
 **Commands for daemon mode:**
+
 - `make daemon-start` - Start tracking
 - `make view` - Open dashboard
 - `make daemon-stop` - Stop tracking
@@ -105,7 +106,7 @@ Why? On macOS/Windows, if the tracking runs in the dashboard window, it can't se
 
 - **Computer**: Windows 10+, macOS 10.15+, or Linux with a desktop
 - **Space**: About 500MB for Docker and dependencies
-- **Permissions**: 
+- **Permissions**:
   - macOS needs Screen Recording permission
   - Linux needs a desktop environment (GNOME, KDE, etc.)
   - Windows works out of the box
@@ -121,13 +122,16 @@ Why? On macOS/Windows, if the tracking runs in the dashboard window, it can't se
 Want the app to start automatically when you log in?
 
 **Linux:**
+
 ```bash
 mkdir -p ~/.config/autostart/
 cp src/scripts/startup/neura-tracker.desktop ~/.config/autostart/
 ```
+
 Edit the file and change `/path/to/neura-hustle-tracker` to your actual path.
 
 **macOS:**
+
 ```bash
 mkdir -p ~/Library/LaunchAgents/
 cp src/scripts/startup/neura-tracker.plist ~/Library/LaunchAgents/
@@ -135,6 +139,7 @@ launchctl load ~/Library/LaunchAgents/neura-tracker.plist
 ```
 
 **Windows:**
+
 ```cmd
 copy src\scripts\startup\neura-tracker.bat "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\"
 ```
