@@ -168,8 +168,8 @@ Found a bug or want to add something? Check [CONTRIBUTING.md](CONTRIBUTING.md).
 
 See [LICENSE](LICENSE) file for details.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=adolfousier/neura-hustle-tracker&type=Date)](https://star-history.com/#adolfousier/neura-hustle-tracker&Date)
+## Star History Chart
 
----
+[![Star History Chart](https://api.star-history.com/svg?repos=adolfousier/neura-hustle-tracker&type=date&legend=top-left)](https://www.star-history.com/#adolfousier/neura-hustle-tracker&type=date&legend=top-left)
 
 **Built with ❤️ by the Neura community** | [Website](https://meetneura.ai) | [Issues](https://github.com/adolfousier/neura-hustle-tracker/issues)
