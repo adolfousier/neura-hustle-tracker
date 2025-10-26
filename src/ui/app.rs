@@ -857,16 +857,6 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
         crate::ui::render::draw_afk(self, f, area);
     }
 
-    pub fn draw_file_breakdown_section(
-        &self,
-        f: &mut Frame,
-        area: ratatui::layout::Rect,
-        scroll_position: usize,
-        highlighted: bool,
-    ) {
-        crate::ui::render::draw_file_breakdown_section(self, f, area, scroll_position, highlighted);
-    }
-
     pub fn draw_file_breakdown_section_with_style(
         &self,
         f: &mut Frame,
