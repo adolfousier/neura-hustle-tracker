@@ -5,6 +5,10 @@ use crate::database::connection::Database;
 use anyhow::Result;
 
 pub async fn create_session_with_parsing(db: &Database, app_name: String, window_name: Option<String>, start_time: DateTime<Local>, category: String) -> Result<Session> {
+    create_session_with_parsing_and_afk(db, app_name, window_name, start_time, category, Some(false)).await
+}
+
+pub async fn create_session_with_parsing_and_afk(db: &Database, app_name: String, window_name: Option<String>, start_time: DateTime<Local>, category: String, is_afk: Option<bool>) -> Result<Session> {
     // Parse window name if available
     let parsed = if let Some(ref win_name) = window_name {
         parser::parse_window_name(&app_name, win_name)
@@ -56,7 +60,7 @@ pub async fn create_session_with_parsing(db: &Database, app_name: String, window
         parsed_data: parsed_json,
         parsing_success: Some(parsed.parsing_success),
         // AFK tracking
-        is_afk: Some(false),
+        is_afk,
     };
 
     let id = db.insert_session(&session).await?;

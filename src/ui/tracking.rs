@@ -92,6 +92,16 @@ pub async fn switch_app(
     new_app: String,
     categorize_fn: fn(&str) -> (String, ratatui::style::Color),
 ) -> Result<SwitchResult> {
+    switch_app_with_afk(ctx, current_session, new_app, categorize_fn, None).await
+}
+
+pub async fn switch_app_with_afk(
+    ctx: &TrackingContext<'_>,
+    current_session: Option<Session>,
+    new_app: String,
+    categorize_fn: fn(&str) -> (String, ratatui::style::Color),
+    is_afk: Option<bool>,
+) -> Result<SwitchResult> {
     let mut logs = Vec::new();
     let saved_session;
 
@@ -117,13 +127,24 @@ pub async fn switch_app(
     let start_time = Local::now();
     let (category_name, _) = categorize_fn(&new_app);
 
-    let new_session = session::create_session_with_parsing(
-        ctx.database,
-        new_app.clone(),
-        window_name.clone(),
-        start_time,
-        category_name.to_string(),
-    ).await?;
+    let new_session = if let Some(afk_flag) = is_afk {
+        session::create_session_with_parsing_and_afk(
+            ctx.database,
+            new_app.clone(),
+            window_name.clone(),
+            start_time,
+            category_name.to_string(),
+            Some(afk_flag),
+        ).await?
+    } else {
+        session::create_session_with_parsing(
+            ctx.database,
+            new_app.clone(),
+            window_name.clone(),
+            start_time,
+            category_name.to_string(),
+        ).await?
+    };
 
     logs.push(format!("[{}] Switched to: {}", Local::now().format("%H:%M:%S"), new_app));
 

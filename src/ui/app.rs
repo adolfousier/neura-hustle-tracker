@@ -442,10 +442,9 @@ impl App {
                                           old_session.app_name, old_session.duration as f64 / 60.0);
                             }
 
-                            // Start AFK session for sleep period
-                            self.switch_app("AFK".to_string()).await?;
+                            // Start AFK session for sleep period with is_afk=true
+                            self.switch_app_with_afk("AFK".to_string(), Some(true)).await?;
                             if let Some(ref mut new_session) = self.current_session {
-                                new_session.is_afk = Some(true);
                                 new_session.start_time = sleep_start_time;
                             }
 
@@ -888,6 +887,10 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
     }
 
     async fn switch_app(&mut self, new_app: String) -> Result<()> {
+        self.switch_app_with_afk(new_app, None).await
+    }
+
+    async fn switch_app_with_afk(&mut self, new_app: String, is_afk: Option<bool>) -> Result<()> {
         let ctx = tracking::TrackingContext {
             monitor: &self.monitor,
             database: &self.database,
@@ -899,7 +902,11 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
             _ => self.current_view_mode.clone(),
         };
 
-        let result = tracking::switch_app(&ctx, self.current_session.take(), new_app, Self::categorize_app).await?;
+        let result = if let Some(afk_flag) = is_afk {
+            tracking::switch_app_with_afk(&ctx, self.current_session.take(), new_app, Self::categorize_app, Some(afk_flag)).await?
+        } else {
+            tracking::switch_app(&ctx, self.current_session.take(), new_app, Self::categorize_app).await?
+        };
 
         // If session was saved, refresh all data
         if result.saved_session.is_some() {

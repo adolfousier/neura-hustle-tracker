@@ -1,4 +1,15 @@
 # Changelog
+
+## v0.3.9 (2025-10-27)
+
+- **Critical Bug Fix: IDLE Gap Session Exclusion**: Fixed a critical bug where IDLE periods (10+ minutes with no activity) were being counted as work time. The issue was that AFK sessions created for IDLE gaps were being saved to the database with `is_afk=false` before the correct flag could be set.
+  - Root cause: `create_session_with_parsing()` was inserting sessions immediately with `is_afk=false`, so subsequent attempts to set `is_afk=true` were too late.
+  - Solution: Added `create_session_with_parsing_and_afk()` function that accepts `is_afk` parameter and saves with the correct value BEFORE database insertion.
+  - Added `switch_app_with_afk()` in tracking module to support AFK session creation with correct flags.
+  - Updated sleep/IDLE detection in both UI and daemon to use the new functions for proper session marking.
+  - Result: IDLE periods and sleep gaps (>10 min inactivity) are now correctly excluded from productivity metrics.
+- **Test Coverage**: Added comprehensive regression tests in `src/tests/test_idle_gap_afk.rs` to verify IDLE gap detection, AFK session exclusion, and productivity calculations.
+
 ## v0.3.8 (2025-10-26)
 
 - **Sleep Gap Detection**: Implemented sleep gap detection across all platforms (Linux, Windows, macOS) to properly handle system sleep periods. When the system wakes up after sleep, the tracker now detects the time gap and creates AFK sessions for sleep duration, ensuring sleep time doesn't appear as active time.
