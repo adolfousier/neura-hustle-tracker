@@ -3,6 +3,12 @@
 
 Write-Host "Installing Neura Hustle Tracker dependencies..." -ForegroundColor Green
 
+$logPath = "$env:TEMP\neura-hustle-tracker-install-$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+Start-Transcript -Path $logPath
+
+Write-Host "Installation log: $logPath" -ForegroundColor Cyan
+Write-Host "Review this log after installation to verify all actions" -ForegroundColor Yellow
+
 # Function to check if a package is installed and handle upgrade prompt
 function Install-OrUpgradePackage {
     param (
@@ -21,13 +27,28 @@ function Install-OrUpgradePackage {
         
         if ($response -eq 'y' -or $response -eq 'Y') {
             Write-Host "Upgrading $FriendlyName..." -ForegroundColor Green
-            winget upgrade --id=$PackageId -e --silent
+            # Show package info before installing
+            winget show --id=$PackageId
+            $confirm = Read-Host "Proceed with upgrade? (yes/no)"
+            if ($confirm -eq "yes") {
+                winget upgrade --id=$PackageId -e --interactive
+            } else {
+                Write-Host "Skipped upgrade of $FriendlyName" -ForegroundColor Yellow
+            }
         } else {
             Write-Host "Continuing with installed version of $FriendlyName." -ForegroundColor Green
         }
     } else {
         Write-Host "Installing $FriendlyName..." -ForegroundColor Green
-        winget install --id=$PackageId -e --silent
+        # Show package info before installing
+        winget show --id=$PackageId
+        $confirm = Read-Host "Proceed with installation? (yes/no)"
+        if ($confirm -eq "yes") {
+            winget install --id=$PackageId -e --interactive
+        } else {
+            Write-Host "Skipped installation of $FriendlyName" -ForegroundColor Red
+            exit 1
+        }
     }
 }
 
@@ -78,20 +99,83 @@ if (!(Test-Path "$repoPath\.env")) {
     Write-Host "Created .env file with database credentials" -ForegroundColor Yellow
 }
 
-# Set execution policy to allow scripts
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+# Check current execution policy
+$currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
+Write-Host "Current execution policy: $currentPolicy" -ForegroundColor Cyan
 
-# Create PowerShell profile functions
-if (!(Test-Path $PROFILE)) {
-    New-Item -Path $PROFILE -ItemType File -Force
-    Write-Host "Created PowerShell profile" -ForegroundColor Yellow
+if ($currentPolicy -eq "Restricted" -or $currentPolicy -eq "AllSigned") {
+    Write-Host "`nThis script requires RemoteSigned execution policy." -ForegroundColor Yellow
+    Write-Host "Current policy: $currentPolicy" -ForegroundColor Yellow
+    $changePolicy = Read-Host "Change execution policy to RemoteSigned? (yes/no)"
+    
+    if ($changePolicy -eq "yes") {
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+        Write-Host "Execution policy changed to RemoteSigned" -ForegroundColor Green
+    } else {
+        Write-Host "Cannot continue without appropriate execution policy." -ForegroundColor Red
+        exit 1
+    }
+}
+# Ask user before modifying PowerShell profile
+Write-Host "`nThis script wants to add functions to your PowerShell profile." -ForegroundColor Yellow
+Write-Host "This will execute code every time you open PowerShell." -ForegroundColor Yellow
+$modifyProfile = Read-Host "Allow PowerShell profile modification? (yes/no)"
+
+if ($modifyProfile -eq "yes") {
+    # Backup existing profile
+    if (Test-Path $PROFILE) {
+        $backupPath = "$PROFILE.backup.$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Copy-Item $PROFILE $backupPath
+        Write-Host "Backed up existing profile to: $backupPath" -ForegroundColor Green
+    } else {
+        New-Item -Path $PROFILE -ItemType File -Force
+    }
+    
+    $currentPath = Get-Location
+    
+    # Add clearly marked section with removal instructions
+    $profileContent = @"
+
+# ===== Neura Hustle Tracker - Added $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') =====
+# To remove these functions, delete this entire section
+    Set-Location '$currentPath'
+    & "C:\Program Files (x86)\GnuWin32\bin\make.exe" daemon-start
 }
 
-$currentPath = Get-Location
-Add-Content $PROFILE "function hustle-start { Set-Location '$currentPath'; make daemon-start }"
-Add-Content $PROFILE "function hustle-stop { Set-Location '$currentPath'; make daemon-stop }"
-Add-Content $PROFILE "function hustle-view { Set-Location '$currentPath'; make view }"
-Add-Content $PROFILE "function hustle-status { Set-Location '$currentPath'; make daemon-status }"
+function hustle-stop {
+    Set-Location '$currentPath'
+    & "C:\Program Files (x86)\GnuWin32\bin\make.exe" daemon-stop
+}
+
+function hustle-status {
+    Set-Location '$currentPath'
+    & "C:\Program Files (x86)\GnuWin32\bin\make.exe" daemon-status
+}
+
+function hustle-view {
+    Start-Process "http://localhost:8000"
+}
+
+
+"@
+    
+    Add-Content $PROFILE $profileContent
+    Write-Host "Added functions to PowerShell profile" -ForegroundColor Green
+    Write-Host "To remove later, edit: $PROFILE" -ForegroundColor Cyan
+    
+    # Reload profile
+    . $PROFILE
+} else {
+    Write-Host "Skipped PowerShell profile modification." -ForegroundColor Yellow
+    Write-Host "You can manually run commands from: $currentPath" -ForegroundColor Cyan
+}
+    Add-Content $PROFILE $profileContent
+    Write-Host "Added functions to PowerShell profile" -ForegroundColor Green
+    Write-Host "To remove later, edit: $PROFILE" -ForegroundColor Cyan
+ else {
+    Write-Host "Skipped PowerShell profile modification." -ForegroundColor Yellow
+    Write-Host "You can manually run commands from: $currentPath" -ForegroundColor Cyan
+}
 
 # Reload profile
 . $PROFILE
