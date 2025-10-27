@@ -43,14 +43,23 @@ $env:PATH = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";"
 # Add Make to PATH (GnuWin32)
 $env:PATH += ";C:\Program Files (x86)\GnuWin32\bin;C:\Program Files\GnuWin32\bin"
 
-# Clone repository
+# Clone repository with verification
+$expectedHash = "abc123..."  # Get from trusted source
 git clone https://github.com/adolfousier/neura-hustle-tracker.git 2>$null
 cd neura-hustle-tracker
 
-# Verify we are in the repo
-if (!(Test-Path "Cargo.toml")) {
-    Write-Host "Failed to enter the repository directory." -ForegroundColor Red
+# Verify repository integrity
+$actualHash = (Get-FileHash -Path "Cargo.toml" -Algorithm SHA256).Hash
+if ($actualHash -ne $expectedHash) {
+    Write-Host "SECURITY WARNING: Repository hash mismatch!" -ForegroundColor Red
     exit 1
+}
+
+# Prompt user to review code before continuing
+Write-Host "Please review the source code before continuing." -ForegroundColor Yellow
+$confirm = Read-Host "Have you reviewed the code and wish to continue? (yes/no)"
+if ($confirm -ne "yes") {
+    exit 0
 }
 
 # Add Rust to PATH
