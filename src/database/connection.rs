@@ -35,7 +35,7 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk
+                parsed_data, parsing_success, is_afk, is_idle
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8,
@@ -48,7 +48,7 @@ impl Database {
                 $26, $27,
                 $28, $29, $30,
                 $31, $32,
-                $33
+                $33, $34
             ) RETURNING id
             "#,
         )
@@ -92,6 +92,7 @@ impl Database {
         .bind(session.parsing_success)
         // AFK tracking
         .bind(session.is_afk)
+        .bind(session.is_idle)
         .fetch_one(&self.pool)
         .await?;
         Ok(id.0)
@@ -111,7 +112,7 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk
+                parsed_data, parsing_success, is_afk, is_idle
             FROM sessions
             ORDER BY start_time DESC
             LIMIT $1
@@ -125,7 +126,7 @@ impl Database {
 
     pub async fn get_app_usage(&self) -> Result<Vec<(String, i64)>> {
         let rows: Vec<(String, i64)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::BIGINT as total_duration FROM sessions WHERE is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC",
+            "SELECT app_name, SUM(duration)::BIGINT as total_duration FROM sessions WHERE is_afk IS NOT TRUE AND is_idle IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -249,7 +250,7 @@ impl Database {
         let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(chrono::Local).unwrap();
 
         let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 AND is_afk IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC"
+            "SELECT app_name, SUM(duration)::bigint as total_duration FROM sessions WHERE start_time >= $1 AND is_afk IS NOT TRUE AND is_idle IS NOT TRUE GROUP BY app_name ORDER BY total_duration DESC"
         )
         .bind(today_start)
         .fetch_all(&self.pool)
@@ -275,7 +276,7 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk
+                parsed_data, parsing_success, is_afk, is_idle
             FROM sessions
             WHERE start_time >= $1
             ORDER BY start_time DESC
@@ -306,7 +307,7 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk
+                parsed_data, parsing_success, is_afk, is_idle
             FROM sessions
             WHERE start_time >= $1
             ORDER BY start_time DESC
@@ -337,7 +338,7 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk
+                parsed_data, parsing_success, is_afk, is_idle
             FROM sessions
             WHERE start_time >= $1
             ORDER BY start_time DESC

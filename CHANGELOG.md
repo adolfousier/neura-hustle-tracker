@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.0 (2025-10-30)
+
+- **AFK & IDLE Tracking Separation**: Major refactor to properly distinguish between AFK (away from keyboard) and IDLE (prolonged inactivity 10+ min).
+  - AFK status: Detected when idle >= 5 minutes with no keyboard/mouse input
+  - IDLE status: Detected when AFK session lasts >= 10 minutes
+  - UI now shows 3 states: "Active" (green), "AFK" (red), "IDLE" (yellow)
+- **Database Schema**: Added `is_idle` boolean column to sessions table to track IDLE periods separately from AFK.
+  - Migrations run automatically on app startup - users don't need to manually apply them
+  - Metrics queries now exclude both AFK and IDLE sessions: `WHERE is_afk IS NOT TRUE AND is_idle IS NOT TRUE`
+- **Daemon Logic**: Updated AFK detection to mark sessions as IDLE when AFK duration >= 10 minutes.
+  - When transitioning from AFK to Active: if AFK lasted 10+ min, session is marked `is_idle=true`
+  - IDLE sessions are excluded from productivity metrics, fixing the issue where 6-hour sleep was counted as 11h+ activity
+- **UI Panel**: Enhanced "AFK Status" panel to display:
+  - Current status (Active/AFK/IDLE) with color coding
+  - Idle duration in minutes:seconds
+  - Clear thresholds: "AFK if idle > 5 minutes", "IDLE if idle > 10 minutes"
+- **Session Model**: Added `is_idle: Option<bool>` field to Session struct for database persistence
+
 ## v0.3.9 (2025-10-27)
 
 - **Critical Bug Fix: IDLE Gap Session Exclusion**: Fixed a critical bug where IDLE periods (10+ minutes with no activity) were being counted as work time. The issue was that AFK sessions created for IDLE gaps were being saved to the database with `is_afk=false` before the correct flag could be set.

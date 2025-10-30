@@ -61,6 +61,7 @@ pub async fn create_session_with_parsing_and_afk(db: &Database, app_name: String
         parsing_success: Some(parsed.parsing_success),
         // AFK tracking
         is_afk,
+        is_idle: Some(false),  // Default to not idle for new sessions
     };
 
     let id = db.insert_session(&session).await?;

@@ -967,12 +967,15 @@ pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect) {
 pub fn draw_afk(app: &App, f: &mut Frame, area: Rect) {
     let afk_threshold_secs = 300; // 5 minutes
     let is_afk = app.is_afk(afk_threshold_secs);
-    let status = if is_afk { "AFK" } else { "Active" };
-    let color = if is_afk { Color::Red } else { Color::Green };
     let last_input = *app.last_input.lock().unwrap();
     let idle_duration = Local::now().signed_duration_since(last_input).num_seconds();
     let idle_minutes = idle_duration / 60;
     let idle_seconds = idle_duration % 60;
+
+    // Determine AFK and IDLE status
+    let is_idle = idle_duration >= 600; // 10 minutes = IDLE
+    let status = if is_idle { "IDLE" } else if is_afk { "AFK" } else { "Active" };
+    let color = if is_idle { Color::Yellow } else if is_afk { Color::Red } else { Color::Green };
 
     // Calculate average keyboard activity percentage by excluding AFK sessions
     // Total time = all sessions today
@@ -1023,6 +1026,7 @@ pub fn draw_afk(app: &App, f: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from("Detects keyboard/mouse activity"),
         Line::from("AFK if idle > 5 minutes"),
+        Line::from("IDLE if idle > 10 minutes"),
     ];
 
     let afk_paragraph = Paragraph::new(afk_lines)

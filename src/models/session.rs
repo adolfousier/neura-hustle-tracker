@@ -51,6 +51,9 @@ pub struct Session {
 
     // AFK tracking
     pub is_afk: Option<bool>,
+
+    // IDLE tracking: true if AFK for 10+ minutes with zero input
+    pub is_idle: Option<bool>,
 }
 
 

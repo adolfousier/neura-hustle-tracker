@@ -74,6 +74,7 @@ impl Daemon {
         let mut last_afk_check = tokio::time::Instant::now();
         let afk_check_interval = Duration::from_secs(1); // Check AFK status every second
         let afk_threshold = Duration::from_secs(300); // 5 minutes of idle = AFK
+        let idle_threshold = Duration::from_secs(600); // 10 minutes = IDLE (no input during AFK)
 
         loop {
             // Check for shutdown signal
@@ -84,49 +85,8 @@ impl Daemon {
 
             // Check for AFK status every second
             if last_afk_check.elapsed() >= afk_check_interval {
-                let time_since_last_check = last_afk_check.elapsed();
-
-                // Detect system sleep: if more than 10 minutes passed since last check, system was likely asleep
-                let sleep_threshold = Duration::from_secs(600); // 10 minutes
-                let was_system_asleep = time_since_last_check > sleep_threshold;
-
                 let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
                 let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
-
-                // If system was asleep, force AFK state for the sleep period
-                if was_system_asleep && !is_currently_afk {
-                    log::info!("System sleep detected (gap: {:.1} minutes), creating AFK session for sleep period",
-                              time_since_last_check.as_secs_f64() / 60.0);
-                    // End current session and start AFK session for the sleep period
-                    if let Some(ref mut session) = self.current_session {
-                        if !session.is_afk.unwrap_or(false) {
-                            // Save the current session up to sleep time
-                            let mut old_session = self.current_session.take().unwrap();
-                            let sleep_start_time = Local::now() - chrono::Duration::from_std(time_since_last_check).unwrap_or(chrono::Duration::minutes(0));
-                            old_session.duration = sleep_start_time.signed_duration_since(old_session.start_time).num_seconds();
-
-                            if let Err(e) = self.database.apply_renames_and_categories(&mut old_session).await {
-                                log::warn!("Failed to apply renames and categories during sleep detection: {}", e);
-                            }
-
-                            if let Err(e) = self.database.insert_session(&old_session).await {
-                                log::error!("Failed to save session during sleep detection: {}", e);
-                            } else {
-                                log::info!("Session saved due to system sleep: {} for {:.1} minutes",
-                                          old_session.app_name, old_session.duration as f64 / 60.0);
-                            }
-
-                            // Start AFK session for sleep period
-                            self.switch_app("AFK".to_string(), Some("System asleep".to_string())).await?;
-                            if let Some(ref mut new_session) = self.current_session {
-                                new_session.is_afk = Some(true);
-                                new_session.start_time = sleep_start_time;
-                            }
-
-                            // Now continue with normal AFK check
-                        }
-                    }
-                }
 
                 // If we have a current session, check if AFK state changed
                 if let Some(ref mut session) = self.current_session {
@@ -137,6 +97,13 @@ impl Daemon {
                         // Save the current session
                         let mut old_session = self.current_session.take().unwrap();
                         old_session.duration = Local::now().signed_duration_since(old_session.start_time).num_seconds();
+
+                        // If this is an AFK session being ended, mark as IDLE if it lasted 10+ minutes
+                        if was_afk && old_session.duration >= idle_threshold.as_secs() as i64 {
+                            old_session.is_idle = Some(true);
+                            log::info!("AFK session marked as IDLE: {} for {:.1} minutes",
+                                      old_session.app_name, old_session.duration as f64 / 60.0);
+                        }
 
                         if let Err(e) = self.database.apply_renames_and_categories(&mut old_session).await {
                             log::warn!("Failed to apply renames and categories on AFK change: {}", e);
@@ -374,6 +341,7 @@ impl Daemon {
             parsed_data: parsed_json,
             parsing_success: Some(parsed.parsing_success),
             is_afk: Some(false),
+            is_idle: Some(false),  // Default to not idle for new sessions
         }
     }
 }

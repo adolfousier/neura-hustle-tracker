@@ -1,6 +1,6 @@
 [package]
 name = "neura_hustle_tracker"
-version = "0.3.9"
+version = "0.4.0"
 edition = "2024"
 
 [[bin]]
