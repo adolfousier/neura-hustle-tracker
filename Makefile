@@ -1,4 +1,4 @@
-.PHONY: run dev build setup db-up db-down clean help daemon-start daemon-stop daemon-status view build-daemon
+.PHONY: run dev build setup db-up db-down clean help daemon-start daemon-stop daemon-status view build-daemon uninstall
 
 # Detect OS for cross-platform support
 ifeq ($(OS),Windows_NT)
@@ -37,6 +37,9 @@ help:
 	@echo "  make build-daemon  - Build daemon binary only"
 	@echo "  make db-down       - Stop PostgreSQL"
 	@echo "  make clean         - Clean all build artifacts and stop DB"
+	@echo ""
+	@echo "Cleanup & Removal:"
+	@echo "  make uninstall     - Remove app, database volume, and local directory"
 	@echo ""
 	@echo "Note: Credentials are auto-generated on first run!"
 
@@ -158,3 +161,61 @@ view: build
 	fi
 	@echo "Opening TUI..."
 	./$(BINARY)
+
+# Uninstall everything: stop daemon, remove DB volume, and delete local directory
+uninstall:
+ifeq ($(OS),Windows_NT)
+	@echo "Uninstalling Neura Hustle Tracker..."
+	@if exist $(PID_FILE) (del /Q $(PID_FILE))
+	@echo.
+	@echo "This will:"
+	@echo "  1. Stop the PostgreSQL database"
+	@echo "  2. Remove the database volume (all tracked data)"
+	@echo "  3. Delete the local installation directory"
+	@echo.
+	@set /p response="Do you want to proceed? (yes/no): "
+	@if /I "!response!"=="yes" (
+		@echo Stopping Docker Compose...
+		@docker compose down -v
+		@echo.
+		@echo ⚠️  WARNING: This will delete the app directory from your computer!
+		@set /p confirm="Type 'yes' to confirm deletion of all files: "
+		@if /I "!confirm!"=="yes" (
+			@echo Removing installation directory...
+			@cd ..
+			@rmdir /s /q "neura-hustle-tracker"
+			@echo ✓ Uninstall complete!
+		) else (
+			@echo ✗ Cancelled. Directory kept.
+		)
+	) else (
+		@echo ✗ Uninstall cancelled.
+	)
+else
+	@echo "Uninstalling Neura Hustle Tracker..."
+	@rm -f $(PID_FILE)
+	@echo ""
+	@echo "This will:"
+	@echo "  1. Stop the PostgreSQL database"
+	@echo "  2. Remove the database volume (all tracked data)"
+	@echo "  3. Delete the local installation directory"
+	@echo ""
+	@read -p "Do you want to proceed? (yes/no): " response; \
+	if [ "$$response" = "yes" ]; then \
+		echo "Stopping Docker Compose..."; \
+		docker compose down -v; \
+		echo ""; \
+		echo "⚠️  WARNING: This will delete the app directory from your computer!"; \
+		read -p "Type 'yes' to confirm deletion of all files: " confirm; \
+		if [ "$$confirm" = "yes" ]; then \
+			echo "Removing installation directory..."; \
+			cd ..; \
+			rm -rf neura-hustle-tracker; \
+			echo "✓ Uninstall complete!"; \
+		else \
+			echo "✗ Cancelled. Directory kept."; \
+		fi; \
+	else \
+		echo "✗ Uninstall cancelled."; \
+	fi
+endif

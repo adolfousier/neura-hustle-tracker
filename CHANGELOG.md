@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.1 (2025-11-01)
+
+- **Uninstall Functionality**: Added comprehensive uninstall support to safely remove the application, database volume, and local files.
+  - `make uninstall` command works on all platforms (Linux, macOS, Windows)
+  - Two-step confirmation process prevents accidental deletion
+  - Dedicated shell script (`src/scripts/uninstall.sh`) for Linux/macOS
+  - Dedicated PowerShell script (`src/scripts/windows_build/windows-uninstall.ps1`) for Windows
+  - Stops PostgreSQL container and removes Docker volume (deletes all tracked data)
+  - Removes installation directory and all application files
+- **Documentation**: Added "Uninstall (Remove Everything)" section to README.md with platform-specific instructions and usage guidelines
+- **Makefile Enhancement**: Updated help text and added `uninstall` to phony targets for cross-platform support
+
 ## v0.4.0 (2025-10-30)
 
 - **AFK & IDLE Tracking Separation**: Major refactor to properly distinguish between AFK (away from keyboard) and IDLE (prolonged inactivity 10+ min).

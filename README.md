@@ -1,8 +1,8 @@
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Ratatui](https://img.shields.io/badge/ratatui-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://ratatui.rs)
-[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
+[![Docker](https://img.shields.io/badge/docker-%23000000.svg?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
 [![Make](https://img.shields.io/badge/Make-%23000000.svg?style=for-the-badge&logo=gnu&logoColor=white)](https://www.gnu.org/software/make/)
-[![PostgreSQL](https://img.shields.io/badge/postgresql-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![PostgreSQL](https://img.shields.io/badge/postgresql-%23000000.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 
 [![Neura Hustle Tracker](https://img.shields.io/badge/Neura%20Hustle%20Tracker-7f56da)](https://meetneura.ai) [![Powered by Neura AI](https://img.shields.io/badge/Powered%20by-Neura%20AI-7f56da)](https://meetneura.ai)
 
@@ -144,6 +144,45 @@ launchctl load ~/Library/LaunchAgents/neura-tracker.plist
 copy src\scripts\startup\neura-tracker.bat "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\"
 ```
 
+## Uninstall (Remove Everything)
+
+Want to remove Neura Hustle Tracker completely? It will delete the app, all tracked data, and the database volume.
+
+**Linux/macOS:**
+
+```bash
+make uninstall
+```
+
+Or use the dedicated script:
+
+```bash
+./src/scripts/uninstall.sh
+```
+
+**Windows:**
+
+From PowerShell in the app directory:
+
+```powershell
+make uninstall
+```
+
+Or download and run the uninstall script:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File src/scripts/windows_build/windows-uninstall.ps1
+```
+
+You'll be asked twice to confirm:
+1. **First prompt**: Confirm you want to proceed
+2. **Second prompt**: Type `yes` to confirm deletion (this prevents accidental removal)
+
+The uninstall will:
+- Stop the PostgreSQL database
+- Remove the database volume (deletes all your tracked data)
+- Delete the installation directory
+
 ## Comparison with Other Apps
 
 | Feature | Neura Hustle Tracker | ActivityWatch | RescueTime |
@@ -159,6 +198,7 @@ copy src\scripts\startup\neura-tracker.bat "%APPDATA%\Microsoft\Windows\Start Me
 - **App not starting?** Make sure Docker Desktop is running
 - **Can't see windows?** Check permissions in System Settings
 - **Database errors?** Try `make clean` then `make run`
+- **Want to remove the app?** Use `make uninstall` to safely delete everything
 
 ## Contributing
 
