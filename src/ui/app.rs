@@ -60,6 +60,7 @@ pub struct App {
     current_window: Option<String>,
     pub current_session: Option<Session>,
     pub last_input: Arc<Mutex<DateTime<Local>>>,
+    last_recorded_idle_secs: i64,  // Track previous idle to calculate delta for accumulation
     // Breakdown data caches
     pub browser_breakdown: Vec<(String, i64)>,
     pub project_breakdown: Vec<(String, i64)>,
@@ -101,6 +102,7 @@ impl App {
             current_window: None,
             current_session: None,
             last_input,
+            last_recorded_idle_secs: 0,
             browser_breakdown: vec![],
             project_breakdown: vec![],
             file_breakdown: vec![],
@@ -423,6 +425,20 @@ impl App {
                 let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
                 log::debug!("Idle duration: {} seconds, is_afk: {}", idle_duration.num_seconds(), is_currently_afk);
 
+                // Accumulate idle time in current session
+                // Only add the DELTA since last check (current_idle - previous recorded)
+                if let Some(ref mut session) = self.current_session {
+                    let current_idle_secs = idle_duration.num_seconds();
+                    // Only accumulate if idle time increased and we're not in full IDLE gap
+                    if current_idle_secs > self.last_recorded_idle_secs && current_idle_secs < 600 && !session.is_idle.unwrap_or(false) {
+                        let idle_delta = current_idle_secs - self.last_recorded_idle_secs;
+                        let accumulated_before = session.idle_accumulation_secs.unwrap_or(0);
+                        session.idle_accumulation_secs = Some(accumulated_before + idle_delta);
+                    }
+                    // Update recorded idle for next iteration
+                    self.last_recorded_idle_secs = current_idle_secs;
+                }
+
                 // If system was asleep, force AFK state for the sleep period
                 if was_system_asleep && !is_currently_afk {
                     log::info!("System sleep detected (gap: {:.1} minutes), creating AFK session for sleep period",
@@ -446,6 +462,10 @@ impl App {
                             self.switch_app_with_afk("AFK".to_string(), Some(true)).await?;
                             if let Some(ref mut new_session) = self.current_session {
                                 new_session.start_time = sleep_start_time;
+                                // CRITICAL FIX: Reset last_input to sleep_start_time so Wayland idle monitoring
+                                // doesn't immediately reset the AFK timer when system wakes up
+                                *self.last_input.lock().unwrap() = sleep_start_time;
+                                log::info!("Reset last_input to sleep_start_time to preserve AFK duration across sleep");
                             }
 
                             // Now continue with normal AFK check
@@ -485,6 +505,9 @@ impl App {
                                 }
                             }
                         }
+
+                        // Reset idle tracking for new session
+                        self.last_recorded_idle_secs = 0;
                     }
                 }
 
@@ -507,6 +530,9 @@ impl App {
                     if let Some(ref mut session) = self.current_session {
                         session.is_afk = Some(false);
                     }
+
+                    // Reset idle tracking for new session
+                    self.last_recorded_idle_secs = 0;
                 }
             }
 

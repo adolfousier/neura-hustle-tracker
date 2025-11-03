@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4.11 (2025-11-03)
+
+- **Fix AFK Average Activity Percentage Reset**: Fixed critical bug where activity percentage would reset to 100% whenever user provided keyboard or mouse input.
+  - Root cause: Activity percentage was calculated only from current idle time, not accumulated idle from the session. When user moved mouse, `last_input` was reset, making idle_duration zero, causing percentage to immediately jump to 100%.
+  - Solution: Added `idle_accumulation_secs` field to Session struct to permanently track accumulated idle time per session that doesn't reset when user becomes active.
+  - Accumulation logic: Tracks the delta of idle time increase every check cycle, so only genuine idle periods add to the accumulation.
+  - Calculation now includes all past session idle accumulation + current session accumulated idle + ongoing idle duration.
+  - Result: Activity percentage now correctly reflects true activity, even after user input resets the idle clock.
+- **Database Schema**: Added `idle_accumulation_secs` BIGINT column to sessions table for persistent idle tracking.
+- **Runtime Migrations**: Replaced compile-time sqlx macro with runtime migration handler that reads and applies all migration files automatically on startup, ensuring migrations work for all users regardless of when migrations were created.
+
 ## v0.4.1 (2025-11-01)
 
 - **Uninstall Functionality**: Added comprehensive uninstall support to safely remove the application, database volume, and local files.

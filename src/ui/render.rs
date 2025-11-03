@@ -977,19 +977,32 @@ pub fn draw_afk(app: &App, f: &mut Frame, area: Rect) {
     let status = if is_idle { "IDLE" } else if is_afk { "AFK" } else { "Active" };
     let color = if is_idle { Color::Yellow } else if is_afk { Color::Red } else { Color::Green };
 
-    // Calculate average keyboard activity percentage by excluding AFK sessions
-    // Total time = all sessions today
-    let total_tracking_today: i64 = app.current_history.iter().map(|s| s.duration).sum();
+    // Calculate average keyboard activity percentage
+    // Avg Activity % = (Total Session Time - Total Accumulated Idle) / Total Session Time × 100%
+    // Accumulates idle from ALL sessions today + current ongoing idle
 
-    // Active time = only non-AFK sessions
-    let active_time: i64 = app.current_history.iter()
-        .filter(|s| !s.is_afk.unwrap_or(false))
+    // Total tracking time today (excluding IDLE gaps only)
+    let total_tracking_today: i64 = app.current_history.iter()
+        .filter(|s| !s.is_idle.unwrap_or(false))  // Exclude IDLE (10+ min gaps)
         .map(|s| s.duration)
         .sum();
 
-    // Add current session if it exists and is not AFK
-    let current_active_time = if let Some(ref session) = app.current_session {
-        if !session.is_afk.unwrap_or(false) {
+    // Sum accumulated idle from all past sessions (excluding IDLE gaps)
+    let past_sessions_accumulated_idle: i64 = app.current_history.iter()
+        .filter(|s| !s.is_idle.unwrap_or(false))
+        .map(|s| s.idle_accumulation_secs.unwrap_or(0))
+        .sum();
+
+    // Current session accumulated idle (seconds)
+    let current_session_accumulated_idle = if let Some(ref session) = app.current_session {
+        session.idle_accumulation_secs.unwrap_or(0)
+    } else {
+        0
+    };
+
+    // Current session time (excluding IDLE)
+    let current_session_time = if let Some(ref session) = app.current_session {
+        if !session.is_idle.unwrap_or(false) {
             Local::now().signed_duration_since(session.start_time).num_seconds()
         } else {
             0
@@ -998,11 +1011,25 @@ pub fn draw_afk(app: &App, f: &mut Frame, area: Rect) {
         0
     };
 
-    let total_active_time = active_time + current_active_time;
-    let total_time_including_current = total_tracking_today + current_active_time;
+    // Total time in seconds
+    let total_time_in_secs = total_tracking_today + current_session_time;
 
-    let avg_activity_percentage = if total_time_including_current > 0 {
-        ((total_active_time as f64 / total_time_including_current as f64) * 100.0).min(100.0)
+    // If currently idle, add the ongoing idle duration to current session accumulated idle
+    let ongoing_idle_secs = if idle_duration > 0 && idle_duration < 600 && current_session_time > 0 {
+        idle_duration  // Use the actual idle_duration from earlier in the function
+    } else {
+        0
+    };
+
+    // Total idle = past sessions idle + current session accumulated idle + ongoing idle
+    let total_idle_secs = past_sessions_accumulated_idle + current_session_accumulated_idle + ongoing_idle_secs;
+    let idle_to_subtract = total_idle_secs.min(total_time_in_secs);
+
+    // Activity = (total time - idle) / total time
+    let active_time_secs = total_time_in_secs.saturating_sub(idle_to_subtract);
+
+    let avg_activity_percentage = if total_time_in_secs > 0 {
+        ((active_time_secs as f64 / total_time_in_secs as f64) * 100.0).min(100.0)
     } else {
         100.0 // Default to 100% if no data yet
     };

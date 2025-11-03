@@ -54,6 +54,9 @@ pub struct Session {
 
     // IDLE tracking: true if AFK for 10+ minutes with zero input
     pub is_idle: Option<bool>,
+
+    // Accumulated idle time in this session (seconds) - doesn't reset when user returns
+    pub idle_accumulation_secs: Option<i64>,
 }
 
 

@@ -2,6 +2,8 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use sqlx::PgPool as Pool;
 use crate::models::session::Session;
+use std::fs;
+use std::path::Path;
 
 pub struct Database {
     pool: Pool,
@@ -11,12 +13,103 @@ impl Database {
     pub async fn new(database_url: &str) -> Result<Self> {
         let pool = PgPool::connect(database_url).await?;
 
-        // Run migrations
-        sqlx::migrate!("src/database/migrations")
-            .run(&pool)
-            .await?;
+        // Run runtime migrations - ensures migrations are applied regardless of when they were created
+        Self::run_migrations(&pool).await?;
 
         Ok(Self { pool })
+    }
+
+    async fn run_migrations(pool: &Pool) -> Result<()> {
+        // Ensure _sqlx_migrations table exists
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS _sqlx_migrations (
+                version BIGINT NOT NULL PRIMARY KEY,
+                description TEXT NOT NULL,
+                installed_on TIMESTAMPTZ NOT NULL DEFAULT now(),
+                success BOOLEAN NOT NULL,
+                execution_time BIGINT NOT NULL
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
+        // Read all migration files
+        let migrations_dir = "src/database/migrations";
+        let mut migration_files: Vec<_> = fs::read_dir(migrations_dir)?
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "sql") {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        migration_files.sort();
+
+        // Apply each migration that hasn't been applied yet
+        for migration_path in migration_files {
+            let filename = migration_path.file_name().unwrap().to_string_lossy().to_string();
+
+            // Extract version from filename (e.g., "20231019000000_initial_schema.sql" -> 20231019000000)
+            let version: i64 = filename.split('_').next().unwrap_or("0").parse().unwrap_or(0);
+
+            // Check if this migration has already been applied
+            let already_applied: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version = $1)"
+            )
+            .bind(version)
+            .fetch_one(pool)
+            .await?;
+
+            if !already_applied {
+                let sql_content = fs::read_to_string(&migration_path)?;
+
+                // Execute the migration
+                let start = std::time::Instant::now();
+                match sqlx::raw_sql(&sql_content).execute(pool).await {
+                    Ok(_) => {
+                        let execution_time = start.elapsed().as_millis() as i64;
+                        // Record migration as successful
+                        sqlx::query(
+                            r#"
+                            INSERT INTO _sqlx_migrations (version, description, success, execution_time)
+                            VALUES ($1, $2, true, $3)
+                            "#,
+                        )
+                        .bind(version)
+                        .bind(&filename)
+                        .bind(execution_time)
+                        .execute(pool)
+                        .await?;
+
+                        log::info!("Applied migration: {} ({}ms)", filename, execution_time);
+                    }
+                    Err(e) => {
+                        // Record migration as failed
+                        sqlx::query(
+                            r#"
+                            INSERT INTO _sqlx_migrations (version, description, success, execution_time)
+                            VALUES ($1, $2, false, 0)
+                            "#,
+                        )
+                        .bind(version)
+                        .bind(&filename)
+                        .execute(pool)
+                        .await
+                        .ok();
+
+                        return Err(anyhow::anyhow!("Migration failed: {}: {}", filename, e));
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
 
@@ -35,7 +128,7 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk, is_idle
+                parsed_data, parsing_success, is_afk, is_idle, idle_accumulation_secs
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8,
@@ -48,7 +141,7 @@ impl Database {
                 $26, $27,
                 $28, $29, $30,
                 $31, $32,
-                $33, $34
+                $33, $34, $35
             ) RETURNING id
             "#,
         )
@@ -93,6 +186,7 @@ impl Database {
         // AFK tracking
         .bind(session.is_afk)
         .bind(session.is_idle)
+        .bind(session.idle_accumulation_secs)
         .fetch_one(&self.pool)
         .await?;
         Ok(id.0)
@@ -112,7 +206,7 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk, is_idle
+                parsed_data, parsing_success, is_afk, is_idle, idle_accumulation_secs
             FROM sessions
             ORDER BY start_time DESC
             LIMIT $1
@@ -276,9 +370,9 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk, is_idle
+                parsed_data, parsing_success, is_afk, is_idle, idle_accumulation_secs
             FROM sessions
-            WHERE start_time >= $1
+            WHERE start_time >= $1 AND is_afk IS NOT TRUE AND is_idle IS NOT TRUE
             ORDER BY start_time DESC
             "#,
         )
@@ -307,9 +401,9 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk, is_idle
+                parsed_data, parsing_success, is_afk, is_idle, idle_accumulation_secs
             FROM sessions
-            WHERE start_time >= $1
+            WHERE start_time >= $1 AND is_afk IS NOT TRUE AND is_idle IS NOT TRUE
             ORDER BY start_time DESC
             "#,
         )
@@ -338,9 +432,9 @@ impl Database {
                 tmux_window_name, tmux_pane_count, terminal_multiplexer,
                 tmux_window_name_renamed, tmux_window_name_category,
                 ide_project_name, ide_file_open, ide_workspace,
-                parsed_data, parsing_success, is_afk, is_idle
+                parsed_data, parsing_success, is_afk, is_idle, idle_accumulation_secs
             FROM sessions
-            WHERE start_time >= $1
+            WHERE start_time >= $1 AND is_afk IS NOT TRUE AND is_idle IS NOT TRUE
             ORDER BY start_time DESC
             "#,
         )
