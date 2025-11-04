@@ -87,10 +87,19 @@ impl Daemon {
             if last_afk_check.elapsed() >= afk_check_interval {
                 let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
                 let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
+                let is_currently_idle = idle_duration.num_seconds() >= idle_threshold.as_secs() as i64;
 
                 // If we have a current session, check if AFK state changed
                 if let Some(ref mut session) = self.current_session {
                     let was_afk = session.is_afk.unwrap_or(false);
+                    let was_idle = session.is_idle.unwrap_or(false);
+
+                    // Mark AFK session as IDLE once it reaches 10+ minutes of inactivity
+                    if was_afk && is_currently_idle && !was_idle {
+                        session.is_idle = Some(true);
+                        log::info!("Session marked as IDLE after {:.1} minutes of inactivity: {}",
+                                  idle_duration.num_seconds() as f64 / 60.0, session.app_name);
+                    }
 
                     // AFK state changed - end current session and start new one
                     if was_afk != is_currently_afk {

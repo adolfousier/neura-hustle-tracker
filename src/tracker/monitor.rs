@@ -1,5 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
+use std::env;
 #[cfg(target_os = "linux")]
 use super::process_inspection;
 
@@ -199,7 +200,7 @@ impl AppMonitor {
             // Use platform-specific native APIs
             match get_active_window() {
                 Ok(active_window) => {
-                    let title = active_window.title.clone();
+                    let mut title = active_window.title.clone();
 
                     // On macOS, if we get a generic title (app name only), try AppleScript fallback
                     #[cfg(target_os = "macos")]
