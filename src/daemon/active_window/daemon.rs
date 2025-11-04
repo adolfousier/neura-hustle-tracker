@@ -142,16 +142,25 @@ impl Daemon {
                 let idle_duration = Local::now().signed_duration_since(*self.last_input.lock().unwrap());
                 let is_currently_afk = idle_duration.num_seconds() >= afk_threshold.as_secs() as i64;
 
+                log::debug!("Detected active app: '{}', window: '{:?}'", active_app, active_window);
+
                 // Only track app changes if not AFK
-                if !is_currently_afk && (active_app != self.current_app || active_window != self.current_window) {
-                    self.switch_app(active_app.clone(), active_window.clone()).await?;
+                if !is_currently_afk {
+                    // Check if app or window changed
+                    if active_app != self.current_app || active_window != self.current_window {
+                        log::info!("App change detected: '{}' -> '{}', window: '{:?}' -> '{:?}'",
+                                  self.current_app, active_app, self.current_window, active_window);
+                        self.switch_app(active_app.clone(), active_window.clone()).await?;
+
+                        // Mark new session as not AFK
+                        if let Some(ref mut session) = self.current_session {
+                            session.is_afk = Some(false);
+                        }
+                    }
+
+                    // Always update current state after successful detection
                     self.current_app = active_app;
                     self.current_window = active_window;
-
-                    // Mark new session as not AFK
-                    if let Some(ref mut session) = self.current_session {
-                        session.is_afk = Some(false);
-                    }
                 }
             }
 
@@ -341,7 +350,8 @@ impl Daemon {
             parsed_data: parsed_json,
             parsing_success: Some(parsed.parsing_success),
             is_afk: Some(false),
-            is_idle: Some(false),  // Default to not idle for new sessions
+            is_idle: Some(false),
+            idle_accumulation_secs: Some(0),
         }
     }
 }

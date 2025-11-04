@@ -3,7 +3,6 @@ use sqlx::postgres::PgPool;
 use sqlx::PgPool as Pool;
 use crate::models::session::Session;
 use std::fs;
-use std::path::Path;
 
 pub struct Database {
     pool: Pool,
@@ -20,7 +19,7 @@ impl Database {
     }
 
     async fn run_migrations(pool: &Pool) -> Result<()> {
-        // Ensure _sqlx_migrations table exists
+        // Ensure _sqlx_migrations table exists with proper schema
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS _sqlx_migrations (
@@ -28,6 +27,7 @@ impl Database {
                 description TEXT NOT NULL,
                 installed_on TIMESTAMPTZ NOT NULL DEFAULT now(),
                 success BOOLEAN NOT NULL,
+                checksum BYTEA NOT NULL,
                 execution_time BIGINT NOT NULL
             )
             "#,
@@ -69,6 +69,12 @@ impl Database {
             if !already_applied {
                 let sql_content = fs::read_to_string(&migration_path)?;
 
+                // Calculate checksum of migration content
+                use sha2::{Sha256, Digest};
+                let mut hasher = Sha256::new();
+                hasher.update(sql_content.as_bytes());
+                let checksum = hasher.finalize().to_vec();
+
                 // Execute the migration
                 let start = std::time::Instant::now();
                 match sqlx::raw_sql(&sql_content).execute(pool).await {
@@ -77,12 +83,13 @@ impl Database {
                         // Record migration as successful
                         sqlx::query(
                             r#"
-                            INSERT INTO _sqlx_migrations (version, description, success, execution_time)
-                            VALUES ($1, $2, true, $3)
+                            INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+                            VALUES ($1, $2, true, $3, $4)
                             "#,
                         )
                         .bind(version)
                         .bind(&filename)
+                        .bind(&checksum)
                         .bind(execution_time)
                         .execute(pool)
                         .await?;
@@ -93,12 +100,13 @@ impl Database {
                         // Record migration as failed
                         sqlx::query(
                             r#"
-                            INSERT INTO _sqlx_migrations (version, description, success, execution_time)
-                            VALUES ($1, $2, false, 0)
+                            INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+                            VALUES ($1, $2, false, $3, 0)
                             "#,
                         )
                         .bind(version)
                         .bind(&filename)
+                        .bind(&checksum)
                         .execute(pool)
                         .await
                         .ok();

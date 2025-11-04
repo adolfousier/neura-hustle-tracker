@@ -1,6 +1,5 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
-use std::env;
 #[cfg(target_os = "linux")]
 use super::process_inspection;
 
@@ -200,7 +199,7 @@ impl AppMonitor {
             // Use platform-specific native APIs
             match get_active_window() {
                 Ok(active_window) => {
-                    let mut title = active_window.title.clone();
+                    let title = active_window.title.clone();
 
                     // On macOS, if we get a generic title (app name only), try AppleScript fallback
                     #[cfg(target_os = "macos")]
@@ -301,71 +300,19 @@ impl AppMonitor {
     }
 
     #[cfg(target_os = "macos")]
-    async fn get_active_window_info_macos() -> Result<(String, String)> {
+    async fn get_window_title_macos(_app_name: &str) -> Result<String> {
         use std::process::Command;
 
-        // Comprehensive AppleScript that tries app-specific methods for browsers and terminals
+        // Use System Events to get window title - works for all apps including browsers
         let script = r#"
             tell application "System Events"
                 set frontApp to first application process whose frontmost is true
-                set appName to name of frontApp
-            end tell
-
-            -- Try application-specific methods for common apps
-            if appName contains "Firefox" or appName is "firefox" then
-                tell application "Firefox"
+                tell frontApp
                     try
                         set windowTitle to name of front window
-                        return appName & "|" & windowTitle
-                    end try
-                end tell
-            else if appName contains "Chrome" or appName contains "Brave" or appName contains "Chromium" then
-                tell application appName
-                    try
-                        set windowTitle to title of active tab of front window
-                        return appName & "|" & windowTitle
-                    end try
-                end tell
-            else if appName contains "Safari" then
-                tell application "Safari"
-                    try
-                        set windowTitle to name of front document
-                        return appName & "|" & windowTitle
-                    end try
-                end tell
-            else if appName contains "Terminal" or appName is "Terminal" then
-                tell application "Terminal"
-                    try
-                        set windowTitle to name of front window
-                        return appName & "|" & windowTitle
-                    end try
-                end tell
-            else if appName contains "iTerm" or appName is "iTerm2" then
-                tell application "iTerm"
-                    try
-                        set windowTitle to name of current session of current window
-                        return appName & "|" & windowTitle
-                    end try
-                end tell
-            else if appName contains "Alacritty" or appName is "Alacritty" or appName is "alacritty" then
-                tell application "System Events"
-                    tell process "Alacritty"
-                        try
-                            set windowTitle to name of front window
-                            return appName & "|" & windowTitle
-                        end try
-                    end tell
-                end tell
-            end if
-
-            -- Fallback: try System Events
-            tell application "System Events"
-                tell process appName
-                    try
-                        set windowTitle to name of front window
-                        return appName & "|" & windowTitle
+                        return windowTitle
                     on error
-                        return appName & "|"
+                        return ""
                     end try
                 end tell
             end tell
@@ -377,63 +324,12 @@ impl AppMonitor {
             .output()?;
 
         if output.status.success() {
-            let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-            if let Some((app, title)) = result.split_once('|') {
-                let app_name = app.trim().to_string();
-                let window_title = title.trim().to_string();
-
-                log::debug!("AppleScript returned: app='{}', title='{}'", app_name, window_title);
-
-                if !app_name.is_empty() {
-                    return Ok((app_name, window_title));
-                }
-            }
-        } else {
-            let error = String::from_utf8_lossy(&output.stderr);
-            log::warn!("AppleScript failed: {}", error);
-        }
-
-        Err(anyhow::anyhow!("Failed to get window info via AppleScript"))
-    }
-
-    #[cfg(target_os = "macos")]
-    async fn get_window_title_macos(app_name: &str) -> Result<String> {
-        use std::process::Command;
-
-        // AppleScript to get the window title of the frontmost window
-        let script = format!(
-            r#"
-            tell application "System Events"
-                set frontApp to first application process whose frontmost is true
-                set appName to name of frontApp
-                if appName is "{}" then
-                    try
-                        set windowTitle to name of front window of frontApp
-                        return windowTitle
-                    on error
-                        return ""
-                    end try
-                else
-                    return ""
-                end if
-            end tell
-            "#,
-            app_name
-        );
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()?;
-
-        if output.status.success() {
             let title = String::from_utf8_lossy(&output.stdout)
                 .trim()
                 .to_string();
 
             if !title.is_empty() {
-                log::debug!("AppleScript returned: '{}'", title);
+                log::debug!("AppleScript returned title: '{}'", title);
                 return Ok(title);
             }
         } else {

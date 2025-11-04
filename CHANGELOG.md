@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.12 (2025-11-04)
+
+- **macOS Window Detection Improvements**: Simplified and streamlined window title detection for all macOS applications.
+  - Removed complex app-specific AppleScript methods that attempted different approaches for browsers, terminals, etc.
+  - Now uses unified System Events approach for consistent window title detection across all applications.
+  - Significantly reduced code complexity while maintaining reliable window tracking.
+  - Improved maintainability by eliminating browser-specific and terminal-specific detection logic.
+- **Enhanced App Tracking Logic**: Improved daemon state management with better logging and status tracking.
+  - Added detailed debug logging for app detection and window changes.
+  - Enhanced app switching logic to properly update current state only when not AFK.
+  - Fixed session initialization to include idle_accumulation_secs field.
+- **Migration System Enhancement**: Added checksum validation to database migrations for improved integrity.
+  - Added sha2 dependency for calculating SHA-256 checksums of migration files.
+  - Migration table now includes checksum column to verify migration file integrity.
+  - Checksum tracking ensures migrations haven't been altered after initial application.
+- **Code Quality**: Cleaned up unused imports and fixed compiler warnings across daemon and tracker modules.
+
 ## v0.4.11 (2025-11-03)
 
 - **Fix AFK Average Activity Percentage Reset**: Fixed critical bug where activity percentage would reset to 100% whenever user provided keyboard or mouse input.

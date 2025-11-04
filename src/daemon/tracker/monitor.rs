@@ -1,6 +1,5 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
-use std::env;
 #[cfg(target_os = "windows")]
 use super::windows_inspection;
 #[cfg(target_os = "macos")]
@@ -196,6 +195,7 @@ impl AppMonitor {
         std::fs::read_to_string(&cmdline_path).ok()
     }
 
+    #[cfg(target_os = "linux")]
     async fn get_active_window_x11() -> Result<(String, String)> {
         use std::process::Command;
 
@@ -383,6 +383,7 @@ impl AppMonitor {
 
 
     #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
     async fn get_active_app_macos() -> Result<String> {
         use std::process::Command;
 
@@ -420,71 +421,18 @@ impl AppMonitor {
     async fn get_active_window_info_macos() -> Result<(String, String, u64)> {
         use std::process::Command;
 
-        // Comprehensive AppleScript that tries app-specific methods for browsers and terminals
+        // Use System Events to get window info - works reliably for all apps
         let script = r#"
             tell application "System Events"
                 set frontApp to first application process whose frontmost is true
                 set appName to name of frontApp
                 set pid to unix id of frontApp
-            end tell
-
-            -- Try application-specific methods for common apps
-            if appName contains "Firefox" or appName is "firefox" then
-                tell application "Firefox"
-                    try
-                        set windowTitle to name of front window
-                        return appName & "|" & windowTitle & "|" & pid
-                    end try
-                end tell
-            else if appName contains "Chrome" or appName contains "Brave" or appName contains "Chromium" then
-                tell application appName
-                    try
-                        set windowTitle to title of active tab of front window
-                        return appName & "|" & windowTitle & "|" & pid
-                    end try
-                end tell
-            else if appName contains "Safari" then
-                tell application "Safari"
-                    try
-                        set windowTitle to name of front document
-                        return appName & "|" & windowTitle & "|" & pid
-                    end try
-                end tell
-            else if appName contains "Terminal" or appName is "Terminal" then
-                tell application "Terminal"
-                    try
-                        set windowTitle to name of front window
-                        return appName & "|" & windowTitle & "|" & pid
-                    end try
-                end tell
-            else if appName contains "iTerm" or appName is "iTerm2" then
-                tell application "iTerm"
-                    try
-                        set windowTitle to name of current session of current window
-                        return appName & "|" & windowTitle & "|" & pid
-                    end try
-                end tell
-            else if appName contains "Alacritty" or appName is "Alacritty" or appName is "alacritty" then
-                tell application "System Events"
-                    tell process "Alacritty"
-                        try
-                            set windowTitle to name of front window
-                            return appName & "|" & windowTitle & "|" & pid
-                        end try
-                    end tell
-                end tell
-            end if
-
-            -- Fallback: try System Events
-            tell application "System Events"
-                tell process appName
-                    try
-                        set windowTitle to name of front window
-                        return appName & "|" & windowTitle & "|" & pid
-                    on error
-                        return appName & "|" & "|" & pid
-                    end try
-                end tell
+                try
+                    set windowTitle to name of front window of frontApp
+                    return appName & "|" & windowTitle & "|" & pid
+                on error
+                    return appName & "|" & "|" & pid
+                end try
             end tell
         "#;
 
@@ -517,33 +465,28 @@ impl AppMonitor {
     }
 
     #[cfg(target_os = "macos")]
-    async fn get_window_title_macos(app_name: &str) -> Result<String> {
+    #[allow(dead_code)]
+    async fn get_window_title_macos(_app_name: &str) -> Result<String> {
         use std::process::Command;
 
-        // AppleScript to get the window title of the frontmost window
-        let script = format!(
-            r#"
+        // Use System Events to get window title - works for all apps including browsers
+        let script = r#"
             tell application "System Events"
                 set frontApp to first application process whose frontmost is true
-                set appName to name of frontApp
-                if appName is "{}" then
+                tell frontApp
                     try
-                        set windowTitle to name of front window of frontApp
+                        set windowTitle to name of front window
                         return windowTitle
                     on error
                         return ""
                     end try
-                else
-                    return ""
-                end if
+                end tell
             end tell
-            "#,
-            app_name
-        );
+        "#;
 
         let output = Command::new("osascript")
             .arg("-e")
-            .arg(&script)
+            .arg(script)
             .output()?;
 
         if output.status.success() {
@@ -552,7 +495,7 @@ impl AppMonitor {
                 .to_string();
 
             if !title.is_empty() {
-                log::debug!("AppleScript returned: '{}'", title);
+                log::debug!("AppleScript returned title: '{}'", title);
                 return Ok(title);
             }
         } else {
