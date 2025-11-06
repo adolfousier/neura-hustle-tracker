@@ -86,6 +86,17 @@ The app tracks automatically. Just switch between your programs normally and it 
 
 Run `make run` and you're done. Everything works in one window.
 
+**Available commands for Linux:**
+
+- `make run` - Start DB + build + run app (all in one!)
+- `make dev` - Start DB + run in dev mode (faster builds)
+- `make db-up` - Start PostgreSQL in Docker
+- `make db-down` - Stop PostgreSQL
+- `make build` - Build TUI binary only
+- `make build-daemon` - Build daemon binary only
+- `make clean` - Clean all build artifacts and stop DB
+- `make help` - Show all available commands
+
 ### macOS/Windows Users → Use "Daemon Mode"
 
 You need two steps because of how these systems work:
@@ -107,9 +118,14 @@ Why? On macOS/Windows, if the tracking runs in the dashboard window, it can't se
 - **Computer**: Windows 10+, macOS 10.15+, or Linux with a desktop
 - **Space**: About 500MB for Docker and dependencies
 - **Permissions**:
-  - macOS needs Screen Recording permission
-  - Linux needs a desktop environment (GNOME, KDE, etc.)
-  - Windows works out of the box
+  - **macOS**: Terminal application needs the following permissions (daemon binary itself does NOT need permissions):
+    - Accessibility
+    - Screen & System Audio Settings
+    - Input Monitoring
+  - **Windows**: Works out of the box
+  - **Linux**: Needs a desktop environment (GNOME, KDE, etc.)
+
+  **Note**: On macOS/Windows, the daemon runs in the background without needing permissions. The **Terminal application** itself needs the permissions listed above to monitor your system properly.
 
 ## Special Notes
 
