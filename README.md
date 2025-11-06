@@ -12,7 +12,7 @@
 
 This app runs in your terminal and shows you exactly where your time goes during work sessions. Built with Ratatui.
 
-![Demo](src/screenshots/hustle-tracker-demo.GIF)
+![Demo](src/screenshots/hustler-tracker-demo-new.gif)
 
 ## What Does This Do?
 
@@ -191,10 +191,12 @@ powershell -ExecutionPolicy Bypass -File src/scripts/windows_build/windows-unins
 ```
 
 You'll be asked twice to confirm:
+
 1. **First prompt**: Confirm you want to proceed
 2. **Second prompt**: Type `yes` to confirm deletion (this prevents accidental removal)
 
 The uninstall will:
+
 - Stop the PostgreSQL database
 - Remove the database volume (deletes all your tracked data)
 - Delete the installation directory
