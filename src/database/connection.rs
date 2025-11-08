@@ -264,11 +264,12 @@ impl Database {
     }
 
     pub async fn categorize_browser_page_title(&self, title: &str, category: &str) -> Result<()> {
-        sqlx::query("UPDATE sessions SET browser_page_title_category = $1 WHERE browser_page_title = $2")
+        let result = sqlx::query("UPDATE sessions SET browser_page_title_category = $1 WHERE browser_page_title = $2")
             .bind(category)
             .bind(title)
             .execute(&self.pool)
             .await?;
+        log::info!("Updated browser_page_title_category: title='{}', category='{}', rows_affected={}", title, category, result.rows_affected());
         Ok(())
     }
 

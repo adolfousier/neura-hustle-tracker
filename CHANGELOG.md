@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.4.13 (2025-11-08)
+
+- **IDLE Detection Fix**: Fixed IDLE detection for non-AFK sessions
+  - Previously, only AFK sessions could be marked as IDLE after 10+ minutes of inactivity
+  - Now all sessions (AFK or regular) are properly marked as IDLE after 10+ minutes with no keyboard/mouse input
+  - Prevents long idle sessions from being counted as active time in statistics
+- **Category Dialog Improvements**: Enhanced category assignment dialog with better navigation
+  - Added Page Up/Page Down support for quick navigation through large app lists
+  - Improved scrolling behavior: selection now stays in viewport when navigating with arrows
+  - Updated dialog help text to show available navigation keys (↑/↓/PgUp/PgDn)
+- **Sub-Entry Categorization**: Fixed persistence and display of sub-entry categories
+  - WhatsApp inside Firefox, tabs, and other sub-entries now properly save assigned categories to database
+  - Sub-entry categories are now correctly retrieved and displayed when reopening category dialog
+  - Fixed aggregation logic to preserve category assignments across multiple sessions
+- **Visual Improvements**: Added category colors to detailed stats panel
+  - "📈 Detailed Stats" panel now displays entries in their category colors (matching "🥧 Categories" panel)
+  - Parent apps show their auto-detected category colors
+  - Sub-entries show their custom categories (or parent's color if no custom category)
+  - Consistent color scheme across all UI panels for better visual feedback
+
 ## v0.4.12 (2025-11-04)
 
 - **macOS Window Detection Improvements**: Simplified and streamlined window title detection for all macOS applications.

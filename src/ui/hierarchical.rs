@@ -74,6 +74,7 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDispla
         // Determine sub-entry unique ID, display name, and category
         let (sub_entry_unique_id, sub_entry_display_name, sub_entry_category) = if let Some(page_title) = &session.browser_page_title {
             let display = session.browser_page_title_renamed.as_ref().unwrap_or(page_title).clone();
+            log::debug!("Browser sub-entry: title='{}', category={:?}", page_title, session.browser_page_title_category);
             (format!("browser_page_title:{}", page_title), display, session.browser_page_title_category.clone())
         } else if let Some(dir) = &session.terminal_directory {
             let original_project_name = extract_project_name(dir).unwrap_or_else(|| dir.clone());
@@ -99,8 +100,12 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDispla
             let (current_duration, _, _) = app_sessions.entry("(general)".to_string()).or_insert((0, "(general)".to_string(), None));
             *current_duration += session.duration;
         } else if !sub_entry_unique_id.is_empty() {
-            let (current_duration, _, _) = app_sessions.entry(sub_entry_unique_id).or_insert((0, sub_entry_display_name, sub_entry_category));
-            *current_duration += session.duration;
+            let entry = app_sessions.entry(sub_entry_unique_id).or_insert((0, sub_entry_display_name.clone(), sub_entry_category.clone()));
+            entry.0 += session.duration;
+            // Update category if the current session has one (use most recently set category)
+            if sub_entry_category.is_some() {
+                entry.2 = sub_entry_category;
+            }
         }
     }
 

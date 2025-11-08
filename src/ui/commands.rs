@@ -133,6 +133,8 @@ pub async fn execute_update_category(
     }
 
     let (id_type, original_value) = unique_id.split_once(':').unwrap_or(("", unique_id));
+    log::info!("Category update: unique_id='{}', id_type='{}', original_value='{}', category='{}'",
+               unique_id, id_type, original_value, category);
 
     let result = match id_type {
         "app_name" => ctx.database.update_app_category(original_value, category).await,

@@ -118,20 +118,23 @@ pub fn draw(app: &App, f: &mut Frame) {
             f.render_widget(usage_list, chunks[1]);
         }
 
-        AppState::SelectingCategory { selected_index, selected_unique_id: _ } => {
+        AppState::SelectingCategory { selected_index, selected_unique_id: _, scroll_offset } => {
             // Full-screen app selection view for category assignment
-            let max_items = (chunks[1].height.saturating_sub(2) as usize).min(app.daily_usage.len()).max(5);
+            let viewport_height = chunks[1].height.saturating_sub(2) as usize;
+            let max_items = viewport_height.min(app.daily_usage.len()).max(5);
             let mut last_parent_color = Color::White;
             let usage_items: Vec<ListItem> = app
                 .daily_usage
                 .iter()
-                .enumerate()
+                .skip(*scroll_offset)
                 .take(max_items)
+                .enumerate()
                 .map(|(i, item)| {
+                    let actual_index = i + *scroll_offset;
                     let duration = item.duration;
                     let hours = duration / 3600;
                     let minutes = (duration % 3600) / 60;
-                    let prefix = if i == *selected_index { "→ " } else { "  " };
+                    let prefix = if actual_index == *selected_index { "→ " } else { "  " };
 
                     let time_display = if hours > 0 {
                         format!("{}h {}m", hours, minutes)
@@ -141,7 +144,10 @@ pub fn draw(app: &App, f: &mut Frame) {
 
                     let clean_app = App::clean_app_name(&item.display_name);
                     let (category, color) = if item.is_sub_entry {
-                        if let Some(parent) = &item.parent_app_name {
+                        // For sub-entries, use their own category if set, otherwise use parent's
+                        if let Some(cat) = &item.category {
+                            (cat.clone(), App::category_from_string(cat).1)
+                        } else if let Some(parent) = &item.parent_app_name {
                             app.get_app_category(parent)
                         } else {
                             app.get_app_category(&item.display_name)
@@ -156,7 +162,7 @@ pub fn draw(app: &App, f: &mut Frame) {
 
                     let display = format!("{}{:<30} {} [{}]", prefix, clean_app, time_display, category);
 
-                    let style = if i == *selected_index {
+                    let style = if actual_index == *selected_index {
                         Style::default().fg(Color::Yellow)
                     } else if item.is_sub_entry {
                         Style::default().fg(last_parent_color)
@@ -171,21 +177,26 @@ pub fn draw(app: &App, f: &mut Frame) {
             let usage_list = List::new(usage_items)
                 .block(Block::default()
                     .borders(Borders::ALL)
-                    .title("🏷️  Select App to Change Category (↑/↓ to navigate, Enter to select, Esc to cancel)"));
+                    .title("🏷️  Select App to Change Category (↑/↓/PgUp/PgDn to navigate, Enter to select, Esc to cancel)"));
             f.render_widget(usage_list, chunks[1]);
         }
 
-        AppState::CategoryMenu { unique_id, selected_index } => {
+        AppState::CategoryMenu { unique_id, selected_index, scroll_offset } => {
             // Show category selection menu
             let categories = app.get_category_options();
+            let viewport_height = chunks[1].height.saturating_sub(2) as usize;
+            let max_items = viewport_height.min(categories.len()).max(5);
             let category_items: Vec<ListItem> = categories
                 .iter()
+                .skip(*scroll_offset)
+                .take(max_items)
                 .enumerate()
                 .map(|(i, category)| {
-                    let prefix = if i == *selected_index { "→ " } else { "  " };
+                    let actual_index = i + *scroll_offset;
+                    let prefix = if actual_index == *selected_index { "→ " } else { "  " };
                     let display = format!("{}{}", prefix, category);
 
-                    let style = if i == *selected_index {
+                    let style = if actual_index == *selected_index {
                         Style::default().fg(Color::Yellow)
                     } else {
                         // Apply color based on category
@@ -204,7 +215,7 @@ pub fn draw(app: &App, f: &mut Frame) {
                 unique_id
             };
             let clean_app = App::clean_app_name(app_name);
-            let title = format!("🏷️  Select Category for '{}' (↑/↓ to navigate, Enter to select, Esc to cancel)", clean_app);
+            let title = format!("🏷️  Select Category for '{}' (↑/↓/PgUp/PgDn to navigate, Enter to select, Esc to cancel)", clean_app);
             let category_list = List::new(category_items)
                 .block(Block::default()
                     .borders(Borders::ALL)
@@ -520,7 +531,7 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
         app.draw_bar_chart(f, chunks[0], title, bar_data);
         app.draw_timeline(f, chunks[1]);
         app.draw_afk(f, chunks[2]);
-        draw_stats(f, chunks[3], &data);
+        draw_stats(f, chunks[3], &data, app);
         app.draw_history(f, chunks[4]);
         app.draw_pie_chart(f, chunks[5], &data);
     } else {
@@ -559,7 +570,7 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
             .split(left_chunks[1]);
         app.draw_timeline(f, timeline_afk_chunks[0]);
         app.draw_afk(f, timeline_afk_chunks[1]);
-        draw_stats(f, left_chunks[2], &data);
+        draw_stats(f, left_chunks[2], &data, app);
         app.draw_history(f, right_chunks[0]);
         app.draw_pie_chart(f, right_chunks[1], &data);
     }
@@ -651,7 +662,7 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
     }
 }
 
-pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::HierarchicalDisplayItem]) {
+pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::HierarchicalDisplayItem], app: &App) {
     // Adaptive number of items based on available height - more items for hierarchical view
     let max_items = (area.height.saturating_sub(3) as usize).min(30).max(5);
 
@@ -704,14 +715,16 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
 
         // Color based on category
         let item_style = if is_child {
-            Style::default().fg(last_parent_color)
-        } else {
-            // Use category color for parent entries
+            // For sub-entries, use their own category if set, otherwise use parent's color
             let color = if let Some(cat) = &item.category {
                 App::category_from_string(cat).1
             } else {
-                Color::White
+                last_parent_color
             };
+            Style::default().fg(color)
+        } else {
+            // For parent entries, use their app category
+            let (_, color) = app.get_app_category(&item.display_name);
             last_parent_color = color;
             Style::default().fg(color)
         };

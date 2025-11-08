@@ -35,8 +35,8 @@ pub enum AppState {
     Dashboard { view_mode: ViewMode },
     ViewingLogs,
     SelectingApp { selected_index: usize, selected_unique_id: String },
-    SelectingCategory { selected_index: usize, selected_unique_id: String },
-    CategoryMenu { unique_id: String, selected_index: usize },
+    SelectingCategory { selected_index: usize, selected_unique_id: String, scroll_offset: usize },
+    CategoryMenu { unique_id: String, selected_index: usize, scroll_offset: usize },
     Input { prompt: String, buffer: String, action: InputAction },
     CommandsPopup,
     HistoryPopup { view_mode: ViewMode, scroll_position: usize },
@@ -660,19 +660,39 @@ self.state = AppState::BreakdownDashboard {
                                      _ => {}
                                  }
                              }
-                             AppState::SelectingCategory { selected_index, selected_unique_id } => {
+                             AppState::SelectingCategory { selected_index, selected_unique_id, scroll_offset } => {
                                  match key.code {
                                      KeyCode::Up => {
                                          if *selected_index > 0 {
                                              *selected_index -= 1;
                                              *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
+                                             if *selected_index < *scroll_offset {
+                                                 *scroll_offset = *selected_index;
+                                             }
                                          }
                                      }
                                      KeyCode::Down => {
                                          if *selected_index < self.daily_usage.len().saturating_sub(1) {
                                              *selected_index += 1;
                                              *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
+                                             let viewport_height = 10;
+                                             if *selected_index >= *scroll_offset + viewport_height {
+                                                 *scroll_offset = selected_index.saturating_sub(viewport_height - 1);
+                                             }
                                          }
+                                     }
+                                     KeyCode::PageUp => {
+                                         let page_size = 10;
+                                         *selected_index = selected_index.saturating_sub(page_size);
+                                         *scroll_offset = scroll_offset.saturating_sub(page_size);
+                                         *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
+                                     }
+                                     KeyCode::PageDown => {
+                                         let page_size = 10;
+                                         let max_index = self.daily_usage.len().saturating_sub(1);
+                                         *selected_index = (*selected_index + page_size).min(max_index);
+                                         *scroll_offset = (*scroll_offset + page_size).min(max_index.saturating_sub(9));
+                                         *selected_unique_id = self.daily_usage[*selected_index].unique_id.clone();
                                      }
                                      KeyCode::Enter => {
                                          if let Some(item) = self.daily_usage.get(*selected_index) {
@@ -683,18 +703,36 @@ self.state = AppState::BreakdownDashboard {
                                      _ => {}
                                  }
                              }
-                             AppState::CategoryMenu { unique_id, selected_index } => {
+                             AppState::CategoryMenu { unique_id, selected_index, scroll_offset } => {
                                  let categories = self.categories.clone();
                                  match key.code {
                                      KeyCode::Up => {
                                          if *selected_index > 0 {
                                              *selected_index -= 1;
+                                             if *selected_index < *scroll_offset {
+                                                 *scroll_offset = *selected_index;
+                                             }
                                          }
                                      }
                                      KeyCode::Down => {
                                          if *selected_index < categories.len().saturating_sub(1) {
                                              *selected_index += 1;
+                                             let viewport_height = 10;
+                                             if *selected_index >= *scroll_offset + viewport_height {
+                                                 *scroll_offset = selected_index.saturating_sub(viewport_height - 1);
+                                             }
                                          }
+                                     }
+                                     KeyCode::PageUp => {
+                                         let page_size = 10;
+                                         *selected_index = selected_index.saturating_sub(page_size);
+                                         *scroll_offset = scroll_offset.saturating_sub(page_size);
+                                     }
+                                     KeyCode::PageDown => {
+                                         let page_size = 10;
+                                         let max_index = categories.len().saturating_sub(1);
+                                         *selected_index = (*selected_index + page_size).min(max_index);
+                                         *scroll_offset = (*scroll_offset + page_size).min(max_index.saturating_sub(9));
                                      }
                                      KeyCode::Enter => {
                                          if let Some(category) = categories.get(*selected_index) {
@@ -971,12 +1009,12 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
     fn start_category_selection(&mut self) {
         if !self.daily_usage.is_empty() {
             let initial_unique_id = self.daily_usage[0].unique_id.clone();
-            self.state = AppState::SelectingCategory { selected_index: 0, selected_unique_id: initial_unique_id };
+            self.state = AppState::SelectingCategory { selected_index: 0, selected_unique_id: initial_unique_id, scroll_offset: 0 };
         }
     }
 
     fn start_category_menu(&mut self, unique_id: String) {
-        self.state = AppState::CategoryMenu { unique_id, selected_index: 0 };
+        self.state = AppState::CategoryMenu { unique_id, selected_index: 0, scroll_offset: 0 };
     }
 
     pub fn get_category_options(&self) -> Vec<String> {

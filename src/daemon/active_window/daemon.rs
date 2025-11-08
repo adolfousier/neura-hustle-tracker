@@ -94,8 +94,8 @@ impl Daemon {
                     let was_afk = session.is_afk.unwrap_or(false);
                     let was_idle = session.is_idle.unwrap_or(false);
 
-                    // Mark AFK session as IDLE once it reaches 10+ minutes of inactivity
-                    if was_afk && is_currently_idle && !was_idle {
+                    // Mark ANY session (AFK or not) as IDLE once it reaches 10+ minutes of inactivity
+                    if is_currently_idle && !was_idle {
                         session.is_idle = Some(true);
                         log::info!("Session marked as IDLE after {:.1} minutes of inactivity: {}",
                                   idle_duration.num_seconds() as f64 / 60.0, session.app_name);
