@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.14 (2025-11-10)
+
+- **Windows Compilation Fix**: Fixed compilation error on Windows platform
+  - Fixed undefined `app_name` variable in Windows-specific code path (line 223 of `src/tracker/monitor.rs`)
+  - The variable was only declared in the macOS conditional block but used in both macOS and Windows sections
+  - Moved `app_name` declaration outside platform-specific blocks to be available to all platforms
+  - Resolves error: `error[E0425]: cannot find value 'app_name' in this scope`
+
 ## v0.4.13 (2025-11-08)
 
 - **IDLE Detection Fix**: Fixed IDLE detection for non-AFK sessions
