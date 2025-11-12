@@ -10,7 +10,9 @@
 
 **Track what apps you use and how long you spend on them.**
 
-This app runs in your terminal and shows you exactly where your time goes during work sessions. Built with Ratatui.
+This app runs in your terminal and shows you exactly where your time goes during work sessions. Built with **Ratatui** (TUI) and **GPUI** (modern GUI).
+
+> **NEW**: A beautiful modern GUI version is now available! See [GUI_DEVELOPMENT.md](GUI_DEVELOPMENT.md) for details.
 
 ![Demo](src/screenshots/hustler-tracker-demo-new.gif)
 
@@ -70,6 +72,8 @@ Done! The app handles everything else automatically.
 
 ## How to Use It
 
+### Terminal Version (TUI)
+
 Once the app is running:
 
 - **Tab** - Switch between Daily, Weekly, and Monthly views
@@ -77,6 +81,20 @@ Once the app is running:
 - **r** - Rename apps to organize them better
 - **Shift+C** - See all available commands
 - **q** - Quit
+
+### GUI Version (Desktop)
+
+A modern desktop GUI is in development using the GPUI framework (Zed editor's UI toolkit):
+
+```bash
+# Build GUI (requires libxkbcommon-dev, libxcb1-dev, libfreetype6-dev)
+cargo build --release --bin neura_hustle_gui
+
+# Run (requires X11/Wayland display)
+./target/release/neura_hustle_gui
+```
+
+**Status**: Foundation laid, actively being developed. See [GUI_DEVELOPMENT.md](GUI_DEVELOPMENT.md) for progress and contribution guide.
 
 The app tracks automatically. Just switch between your programs normally and it records everything.
 

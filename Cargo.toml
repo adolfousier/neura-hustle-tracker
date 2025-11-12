@@ -11,6 +11,10 @@ path = "src/main.rs"
 name = "neura_hustle_daemon"
 path = "src/daemon_main.rs"
 
+[[bin]]
+name = "neura_hustle_gui"
+path = "src/gui_main.rs"
+
 [dependencies]
 active-win-pos-rs = "0.9.1"
 anyhow = "1.0.100"
@@ -30,3 +34,5 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "chrono"] }
 tokio = { version = "1.48.0", features = ["full"] }
 zbus = { version = "4.0", default-features = false, features = ["tokio"] }
 sha2 = "0.10.9"
+gpui = "0.2"
+gpui-component = "0.4.0-preview1"
