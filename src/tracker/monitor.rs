@@ -7,9 +7,9 @@ use super::process_inspection;
 #[derive(serde::Deserialize, Debug)]
 struct WindowInfo {
     #[serde(default)]
-    wm_class: String,
+    wm_class: Option<String>,
     #[serde(default)]
-    title: String,
+    title: Option<String>,
     #[serde(default)]
     focus: bool,
 }
@@ -94,7 +94,10 @@ impl AppMonitor {
             .find(|w| w.focus)
             .ok_or(anyhow::anyhow!("No focused window found"))?;
 
-        Ok((focused_window.wm_class.clone(), focused_window.title.clone()))
+        let wm_class = focused_window.wm_class.clone().unwrap_or_else(|| "Unknown".to_string());
+        let title = focused_window.title.clone().unwrap_or_else(|| String::new());
+
+        Ok((wm_class, title))
     }
 
     // Get both app and window info in a single call (more efficient for macOS AppleScript)
@@ -201,7 +204,7 @@ impl AppMonitor {
             match get_active_window() {
                 Ok(active_window) => {
                     let mut title = active_window.title.clone();
-                    let app_name = active_window.app_name.clone();
+                    let _app_name = active_window.app_name.clone();
 
                     // On macOS, if we get a generic title (app name only), try AppleScript fallback
                     #[cfg(target_os = "macos")]

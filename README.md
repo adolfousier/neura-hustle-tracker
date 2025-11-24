@@ -15,6 +15,7 @@ This app runs in your terminal and shows you exactly where your time goes during
 > **NEW**: A beautiful modern GUI version is now available! See [GUI_DEVELOPMENT.md](GUI_DEVELOPMENT.md) for details.
 
 ![Demo](src/screenshots/hustler-tracker-demo-new.gif)
+![WIP GUI Demo](src/screenshots/gui_demo_wip.png)
 
 ## What Does This Do?
 

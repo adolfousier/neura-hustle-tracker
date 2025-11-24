@@ -12,6 +12,7 @@ debug.log
 app.log
 daemon.log
 daemon.pid
+src/plans/
 
 client/target
 client/node_modules
