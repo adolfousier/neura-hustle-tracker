@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, EnableMouseCapture, DisableMouseCapture};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, EnableMouseCapture, DisableMouseCapture};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 
@@ -23,6 +23,8 @@ use crate::ui::hierarchical::HierarchicalDisplayItem;
 
 // Re-export ViewMode for other ui modules
 pub use crate::ui::tracking::ViewMode;
+
+
 
 #[derive(Debug, Clone)]
 pub enum InputAction {
@@ -538,6 +540,10 @@ impl App {
 
             if event::poll(Duration::from_millis(100))? {
                 if let Event::Key(key) = event::read()? {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
+
                     log::debug!("Key pressed: {:?} in state: {:?}", key.code, self.state);
                     self.logs.push(format!("[{}] Key: {:?} State: {:?}", Local::now().format("%H:%M:%S"), key.code, self.state));
 
@@ -553,18 +559,23 @@ impl App {
                              KeyCode::Char('c') => self.start_category_selection(),
                              KeyCode::Char('l') => self.view_logs(),
                              KeyCode::Char('C') => self.state = AppState::CommandsPopup,
-                             KeyCode::Tab => {
-                                 let new_view_mode = match view_mode {
-                                     ViewMode::Daily => ViewMode::Weekly,
-                                     ViewMode::Weekly => ViewMode::Monthly,
-                                     ViewMode::Monthly => ViewMode::Daily,
-                                 };
-                                 self.current_view_mode = new_view_mode.clone();
+                             KeyCode::Char('d') => {
+                                 self.current_view_mode = ViewMode::Daily;
                                  self.update_history().await?;
-                                 self.state = AppState::Dashboard { view_mode: new_view_mode };
+                                 self.state = AppState::Dashboard { view_mode: ViewMode::Daily };
                              }
-                             KeyCode::Char('h') => {
-                                 log::debug!("'h' key pressed - opening history popup");
+                             KeyCode::Char('w') => {
+                                 self.current_view_mode = ViewMode::Weekly;
+                                 self.update_history().await?;
+                                 self.state = AppState::Dashboard { view_mode: ViewMode::Weekly };
+                             }
+                             KeyCode::Char('m') => {
+                                 self.current_view_mode = ViewMode::Monthly;
+                                 self.update_history().await?;
+                                 self.state = AppState::Dashboard { view_mode: ViewMode::Monthly };
+                             }
+                             KeyCode::Char('s') => {
+                                 log::debug!("'s' key pressed - opening history popup");
                                  self.logs.push(format!("[{}] Opening history popup", Local::now().format("%H:%M:%S")));
                                  self.current_history = match view_mode {
                                      ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),
@@ -599,8 +610,8 @@ self.state = AppState::BreakdownDashboard {
                              KeyCode::Char('r') => self.start_app_selection(),
                              KeyCode::Char('c') => self.start_category_selection(),
                              KeyCode::Char('l') => self.view_logs(),
-                             KeyCode::Char('h') => {
-                                 log::debug!("'h' key pressed from CommandsPopup - opening history popup");
+                             KeyCode::Char('s') => {
+                                 log::debug!("'s' key pressed from CommandsPopup - opening history popup");
                                  self.logs.push(format!("[{}] Opening history popup from commands menu", Local::now().format("%H:%M:%S")));
                                  self.current_history = match &self.current_view_mode {
                                      ViewMode::Daily => self.database.get_daily_sessions().await.unwrap_or_default(),

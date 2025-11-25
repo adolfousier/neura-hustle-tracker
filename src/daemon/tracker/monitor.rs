@@ -1,5 +1,6 @@
 use active_win_pos_rs::get_active_window;
 use anyhow::Result;
+use std::env;
 #[cfg(target_os = "windows")]
 use super::windows_inspection;
 #[cfg(target_os = "macos")]

@@ -1,7 +1,7 @@
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Ratatui](https://img.shields.io/badge/ratatui-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://ratatui.rs)
 [![Docker](https://img.shields.io/badge/docker-%23000000.svg?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
-[![Make](https://img.shields.io/badge/Make-%23000000.svg?style=for-the-badge&logo=gnu&logoColor=white)](https://www.gnu.org/software/make/)
+[![Just](https://img.shields.io/badge/Just-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/casey/just)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-%23000000.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 
 [![Neura Hustle Tracker](https://img.shields.io/badge/Neura%20Hustle%20Tracker-7f56da)](https://meetneura.ai) [![Powered by Neura AI](https://img.shields.io/badge/Powered%20by-Neura%20AI-7f56da)](https://meetneura.ai)
@@ -28,7 +28,7 @@ This app runs in your terminal and shows you exactly where your time goes during
 Copy and paste this into your terminal:
 
 ```bash
-sudo apt update && sudo apt install -y make docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && make run
+sudo apt update && sudo apt install -y docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && cargo install just && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && just run
 ```
 
 That's it! The app will start tracking automatically.
@@ -39,10 +39,10 @@ That's it! The app will start tracking automatically.
 2. Then paste this into Terminal:
 
 ```bash
-brew install make git rustup-init && rustup-init -y && source ~/.cargo/env && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && make daemon-start
+brew install git rustup-init && rustup-init -y && source ~/.cargo/env && cargo install just && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && just daemon-start
 ```
 
-3. View your stats anytime: `make view`
+3. View your stats anytime: `just view`
 
 ### Windows
 
@@ -54,7 +54,7 @@ brew install make git rustup-init && rustup-init -y && source ~/.cargo/env && gi
 powershell -Command "iwr -useb https://raw.githubusercontent.com/adolfousier/neura-hustle-tracker/main/src/scripts/windows_build/windows-install.ps1 | iex"
 ```
 
-4. View your stats anytime: `hustle-view`
+4. View your stats anytime: `just view`
 
 ## Already Have Rust and Docker?
 
@@ -63,7 +63,8 @@ If you already have the prerequisites installed:
 ```bash
 git clone https://github.com/adolfousier/neura-hustle-tracker
 cd neura-hustle-tracker
-make run
+cargo install just
+just run
 ```
 
 Done! The app handles everything else automatically.
@@ -72,9 +73,14 @@ Done! The app handles everything else automatically.
 
 Once the app is running:
 
-- **Tab** - Switch between Daily, Weekly, and Monthly views
-- **h** - See your complete session history
+- **d** - Switch to Daily view
+- **w** - Switch to Weekly view
+- **m** - Switch to Monthly view
+- **s** - View session history
+- **b** - View activity breakdowns
 - **r** - Rename apps to organize them better
+- **c** - Change app category
+- **l** - View logs
 - **Shift+C** - See all available commands
 - **q** - Quit
 
@@ -84,34 +90,34 @@ The app tracks automatically. Just switch between your programs normally and it 
 
 ### Linux Users → Use "Unified Mode"
 
-Run `make run` and you're done. Everything works in one window.
+Run `just run` and you're done. Everything works in one window.
 
 **Available commands for Linux:**
 
-- `make run` - Start DB + build + run app (all in one!)
-- `make dev` - Start DB + run in dev mode (faster builds)
-- `make db-up` - Start PostgreSQL in Docker
-- `make db-down` - Stop PostgreSQL
-- `make build` - Build TUI binary only
-- `make build-daemon` - Build daemon binary only
-- `make clean` - Clean all build artifacts and stop DB
-- `make help` - Show all available commands
+- `just run` - Start DB + build + run app (all in one!)
+- `just dev` - Start DB + run in dev mode (faster builds)
+- `just db-up` - Start PostgreSQL in Docker
+- `just db-down` - Stop PostgreSQL
+- `just build` - Build TUI binary only
+- `just build-daemon` - Build daemon binary only
+- `just clean` - Clean all build artifacts and stop DB
+- `just help` - Show all available commands
 
 ### macOS/Windows Users → Use "Daemon Mode"
 
 You need two steps because of how these systems work:
 
-1. **Start tracking in background**: `make daemon-start`
-2. **Open the dashboard**: `make view`
+1. **Start tracking in background**: `just daemon-start`
+2. **Open the dashboard**: `just view`
 
 Why? On macOS/Windows, if the tracking runs in the dashboard window, it can't see when you switch to other apps. Running it in the background fixes this.
 
 **Commands for daemon mode:**
 
-- `make daemon-start` - Start tracking
-- `make view` - Open dashboard
-- `make daemon-stop` - Stop tracking
-- `make daemon-status` - Check if running
+- `just daemon-start` - Start tracking
+- `just view` - Open dashboard
+- `just daemon-stop` - Stop tracking
+- `just daemon-status` - Check if running
 
 ## What You Need
 
@@ -167,7 +173,7 @@ Want to remove Neura Hustle Tracker completely? It will delete the app, all trac
 **Linux/macOS:**
 
 ```bash
-make uninstall
+just uninstall
 ```
 
 Or use the dedicated script:
@@ -181,7 +187,7 @@ Or use the dedicated script:
 From PowerShell in the app directory:
 
 ```powershell
-make uninstall
+just uninstall
 ```
 
 Or download and run the uninstall script:
@@ -215,8 +221,8 @@ The uninstall will:
 
 - **App not starting?** Make sure Docker Desktop is running
 - **Can't see windows?** Check permissions in System Settings
-- **Database errors?** Try `make clean` then `make run`
-- **Want to remove the app?** Use `make uninstall` to safely delete everything
+- **Database errors?** Try `just clean` then `just run`
+- **Want to remove the app?** Use `just uninstall` to safely delete everything
 
 ## Contributing
 

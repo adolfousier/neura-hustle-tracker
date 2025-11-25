@@ -201,9 +201,7 @@ impl AppMonitor {
             match get_active_window() {
                 Ok(active_window) => {
                     let mut title = active_window.title.clone();
-                    let app_name = active_window.app_name.clone();
 
-                    // On macOS, if we get a generic title (app name only), try AppleScript fallback
                     #[cfg(target_os = "macos")]
                     {
                         if title == app_name || title.is_empty() || title == "Unknown" {

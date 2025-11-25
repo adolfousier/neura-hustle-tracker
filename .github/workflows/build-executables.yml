@@ -1,0 +1,131 @@
+name: Build Cross-Platform Executables
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g., v0.4.15)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build TUI (Linux)
+        run: cargo build --release --bin neura_hustle_tracker
+
+      - name: Build Daemon (Linux)
+        run: cargo build --release --bin neura_hustle_daemon
+
+      - name: Create artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Copy binaries
+        run: |
+          cp target/release/neura_hustle_tracker artifacts/neura_hustle_tracker-linux-x86_64
+          cp target/release/neura_hustle_daemon artifacts/neura_hustle_daemon-linux-x86_64
+          chmod +x artifacts/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: artifacts/
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add target
+        run: rustup target add ${{ matrix.arch }}-apple-darwin
+
+      - name: Build TUI (macOS-${{ matrix.arch }})
+        run: cargo build --release --target ${{ matrix.arch }}-apple-darwin --bin neura_hustle_tracker
+
+      - name: Build Daemon (macOS-${{ matrix.arch }})
+        run: cargo build --release --target ${{ matrix.arch }}-apple-darwin --bin neura_hustle_daemon
+
+      - name: Create artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Copy binaries
+        run: |
+          cp target/${{ matrix.arch }}-apple-darwin/release/neura_hustle_tracker artifacts/neura_hustle_tracker-macos-${{ matrix.arch }}
+          cp target/${{ matrix.arch }}-apple-darwin/release/neura_hustle_daemon artifacts/neura_hustle_daemon-macos-${{ matrix.arch }}
+          chmod +x artifacts/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}-binaries
+          path: artifacts/
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build TUI (Windows)
+        run: cargo build --release --bin neura_hustle_tracker
+
+      - name: Build Daemon (Windows)
+        run: cargo build --release --bin neura_hustle_daemon
+
+      - name: Create artifacts directory
+        shell: powershell
+        run: mkdir -p artifacts
+
+      - name: Copy binaries
+        shell: powershell
+        run: |
+          Copy-Item target/release/neura_hustle_tracker.exe artifacts/neura_hustle_tracker-windows-x86_64.exe
+          Copy-Item target/release/neura_hustle_daemon.exe artifacts/neura_hustle_daemon-windows-x86_64.exe
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binaries
+          path: artifacts/
+
+  create-release-artifacts:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Prepare artifacts for release
+        run: |
+          mkdir -p release-artifacts
+          find all-artifacts -type f -exec cp {} release-artifacts/ \;
+          ls -la release-artifacts/
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

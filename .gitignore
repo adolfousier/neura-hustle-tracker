@@ -7,11 +7,17 @@ IMPLEMENTATION_PLAN.md
 PLAN.md
 install-extension.sh
 commands.md
+daemon.pid
+src/plans/
+
+# log files
 server.log
 debug.log
 app.log
+gui.log
+*.log
 daemon.log
-daemon.pid
+
 
 client/target
 client/node_modules

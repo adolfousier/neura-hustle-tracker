@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.4.15 (2025-11-25)
+
+- **Build System Migration**: Replaced Make with Just-rs
+  - All build commands now use `just` instead of `make`
+  - Removed `make` dependency - project now fully uses Rust-based `just` for build automation
+  - All platform scripts (Linux, macOS, Windows) migrated to justfile
+  - Backward compatibility maintained for users transitioning from Makefile
+- **Command UI Improvements**: Clarified and improved command structure
+  - **View Mode Switching**: Replaced Tab key with dedicated keys:
+    - `d` - Switch to Daily view
+    - `w` - Switch to Weekly view
+    - `m` - Switch to Monthly view
+  - **Session History**: Changed from `h` to `s` for viewing session history (less confusing)
+  - **Command Dialog**: Updated to display all available commands clearly
+  - Updated README with new command keys
+- **Cross-Platform Executables**: Now generating platform-specific binaries
+  - Linux: Single unified binary (TUI + backend in one)
+  - Windows: daemon.exe (backend) + tui.exe (frontend)
+  - macOS: daemon (backend) + tui (frontend)
+  - Binaries available for download from GitHub releases
+  - Users only need Docker + PostgreSQL, no Rust installation required
+
 ## v0.4.14 (2025-11-10)
 
 - **Windows Compilation Fix**: Fixed compilation error on Windows platform

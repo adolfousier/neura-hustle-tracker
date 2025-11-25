@@ -273,8 +273,10 @@ pub fn draw(app: &App, f: &mut Frame) {
 
             let commands_text = vec![
                 Line::from(""),
-                Line::from("  [Tab]  Switch View (Daily/Weekly/Monthly)"),
-                Line::from("  [h]    View session history (scrollable popup)"),
+                Line::from("  [d]    Switch to Daily view"),
+                Line::from("  [w]    Switch to Weekly view"),
+                Line::from("  [m]    Switch to Monthly view"),
+                Line::from("  [s]    View session history (scrollable popup)"),
                 Line::from("  [b]    View activity breakdowns (scrollable popup)"),
                 Line::from("  [r]    Rename app/tab"),
                 Line::from("  [c]    Change app category"),
