@@ -201,6 +201,7 @@ impl AppMonitor {
             match get_active_window() {
                 Ok(active_window) => {
                     let mut title = active_window.title.clone();
+                    let app_name = active_window.app_name.clone();
 
                     #[cfg(target_os = "macos")]
                     {
