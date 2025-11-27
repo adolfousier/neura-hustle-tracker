@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.16 (2025-11-27)
+
+- **Timeline Visualization**: Full-width colored activity timeline for day/week/month views
+  - Each period (hour/day) colored by dominant activity category (Development=Yellow, Browsing=Blue, Communication=Green, Media=Magenta, Files=Cyan, etc.)
+  - Adaptive hour/day labels based on terminal width (every hour for daily, every day for weekly/monthly)
+  - Category legend showing top 5 active categories with their colors
+  - Visual indicators: █ (full block) for active periods, ░ (light shade) for inactive periods
+
+- **Dashboard Layout Reorganization**: Improved space utilization and information hierarchy
+  - Sessions timeline moved to dedicated dialog (accessible via 's' key from dashboard)
+  - Main dashboard now features colored timeline at bottom for better activity overview
+  - Detailed stats and categories repositioned for improved layout flow
+  - Better visual separation between dashboard sections
+
+- **View Mode Synchronization**: Fixed timeline to respect Daily/Weekly/Monthly views
+  - "Today's Activity Progress" now shows current view's data (Daily/Weekly/Monthly)
+  - Weekly view correctly aggregates last 7 days from Sunday
+  - Monthly view correctly aggregates full month from 1st
+  - All activity percentages now match their respective pie charts
+
+- **UI Improvements**: Enhanced visual clarity and information density
+  - Full-width timeline display for better visual impact
+  - Proper spacing and alignment for improved readability
+  - Category colors consistent across all views
+
 ## v0.4.15 (2025-11-25)
 
 - **Build System Migration**: Replaced Make with Just-rs

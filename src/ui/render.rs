@@ -22,9 +22,9 @@ pub fn draw(app: &App, f: &mut Frame) {
             if let Some(session) = &app.current_session {
                 let duration = Local::now().signed_duration_since(session.start_time).num_seconds();
                 let display_name = app.manual_app_name.as_ref().unwrap_or(&session.app_name);
-                format!("Tracking: {} for {}s | [Shift+C] Commands | [h] History", display_name, duration)
+                format!("Tracking: {} for {}s | [Shift+C] Commands | [s] History", display_name, duration)
             } else {
-                format!("Not tracking - Current app: {} | [Shift+C] Commands | [h] History", app.current_app)
+                format!("Not tracking - Current app: {} | [Shift+C] Commands | [s] History", app.current_app)
             }
         }
         AppState::ViewingLogs => "Viewing Logs - Press any key to return".to_string(),
@@ -522,59 +522,68 @@ pub fn draw_dashboard(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(10),  // Bar chart
-                Constraint::Min(8),   // Timeline
+                Constraint::Min(8),   // Timeline (now sessions timeline)
                 Constraint::Min(8),   // AFK
                 Constraint::Min(8),   // Stats
-                Constraint::Min(10),  // History
                 Constraint::Min(8),   // Categories
             ].as_ref())
             .split(area);
 
         app.draw_bar_chart(f, chunks[0], title, bar_data);
-        app.draw_timeline(f, chunks[1]);
+        draw_sessions_timeline(app, f, chunks[1], view_mode);
         app.draw_afk(f, chunks[2]);
         draw_stats(f, chunks[3], &data, app);
-        app.draw_history(f, chunks[4]);
-        app.draw_pie_chart(f, chunks[5], &data);
+        app.draw_pie_chart(f, chunks[4], &data);
     } else {
-        // HORIZONTAL LAYOUT for larger terminals (50/50 split)
+        // HORIZONTAL LAYOUT for larger terminals
+        // Main layout: top section (left/right) + bottom section (timeline)
         let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(85),  // Top section (dashboard)
+                Constraint::Percentage(15),  // Bottom section (sessions timeline)
+            ].as_ref())
+            .split(area);
+
+        // TOP SECTION: 50/50 left/right split
+        let dashboard_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Percentage(50),
                 Constraint::Percentage(50),
             ].as_ref())
-            .split(area);
+            .split(main_chunks[0]);
 
-        // LEFT SIDE: Bar Chart + Timeline/AFK + Stats
+        // LEFT SIDE: Bar Chart + Timeline/AFK
         let left_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(40),   // Bar chart
-                Constraint::Percentage(30),   // Timeline + AFK
-                Constraint::Percentage(30),   // Detailed stats
+                Constraint::Percentage(50),   // Bar chart
+                Constraint::Percentage(50),   // Timeline + AFK
             ].as_ref())
-            .split(main_chunks[0]);
+            .split(dashboard_chunks[0]);
 
-        // RIGHT SIDE: Session History + Pie Chart
+        // RIGHT SIDE: Detailed Stats + Categories
         let right_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(70),
-                Constraint::Percentage(30),
+                Constraint::Percentage(50),   // Detailed stats
+                Constraint::Percentage(50),   // Categories (pie chart)
             ].as_ref())
-            .split(main_chunks[1]);
+            .split(dashboard_chunks[1]);
 
         app.draw_bar_chart(f, left_chunks[0], title, bar_data);
         let timeline_afk_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
             .split(left_chunks[1]);
-        app.draw_timeline(f, timeline_afk_chunks[0]);
+        app.draw_timeline(f, timeline_afk_chunks[0], view_mode);
         app.draw_afk(f, timeline_afk_chunks[1]);
-        draw_stats(f, left_chunks[2], &data, app);
-        app.draw_history(f, right_chunks[0]);
+        draw_stats(f, right_chunks[0], &data, app);
         app.draw_pie_chart(f, right_chunks[1], &data);
+
+        // BOTTOM: Sessions Timeline (full width)
+        draw_sessions_timeline(app, f, main_chunks[1], view_mode);
     }
 }
 
@@ -752,110 +761,6 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
     f.render_widget(stats_list, area);
 }
 
-pub fn draw_history(app: &App, f: &mut Frame, area: Rect) {
-    // Adaptive number of items based on available height
-    let max_items = (area.height.saturating_sub(3) as usize).min(30).max(5);
-
-    let mut history_items: Vec<ListItem> = Vec::new();
-
-    // Add top margin
-    history_items.push(ListItem::new(Line::from("")));
-
-    // Add current session first with real-time duration
-    if let Some(current_session) = &app.current_session {
-        let current_duration = Local::now().signed_duration_since(current_session.start_time).num_seconds();
-        let minutes = current_duration / 60;
-        let time = current_session.start_time.format("%H:%M");
-
-        // Create display name with window name if available
-        let clean_app = App::clean_app_name(&current_session.app_name);
-        let display_name = if let Some(window_name) = &current_session.window_name {
-            if area.width < 40 {
-                // Truncate both app and window names for narrow terminals
-                let app_short = if clean_app.len() > 8 {
-                    format!("{}...", &clean_app[..5])
-                } else {
-                    clean_app.clone()
-                };
-                let window_short = if window_name.len() > 8 {
-                    format!("{}...", &window_name[..5])
-                } else {
-                    window_name.clone()
-                };
-                format!("{} ({})", app_short, window_short)
-            } else {
-                format!("{} ({})", clean_app, window_name)
-            }
-        } else {
-            // Fallback to just app name if no window name
-            if area.width < 40 {
-                if clean_app.len() > 12 {
-                    format!("{}...", &clean_app[..9])
-                } else {
-                    clean_app
-                }
-            } else {
-                clean_app
-            }
-        };
-
-        let display = format!("{} - {}: {}m [LIVE]", time, display_name, minutes);
-        history_items.push(ListItem::new(Line::from(display)).style(Style::default().fg(Color::Green)));
-    }
-
-    // Add historical sessions
-    let remaining_slots = max_items.saturating_sub(history_items.len());
-    history_items.extend(
-        app.current_history
-            .iter()
-            .take(remaining_slots)
-            .map(|session| {
-                let minutes = session.duration / 60;
-                let time = session.start_time.format("%H:%M");
-
-                // Create display name with window name if available
-                let clean_app = App::clean_app_name(&session.app_name);
-                let display_name = if let Some(window_name) = &session.window_name {
-                    if area.width < 40 {
-                        // Truncate both app and window names for narrow terminals
-                        let app_short = if clean_app.len() > 8 {
-                            format!("{}...", &clean_app[..5])
-                        } else {
-                            clean_app.clone()
-                        };
-                        let window_short = if window_name.len() > 8 {
-                            format!("{}...", &window_name[..5])
-                        } else {
-                            window_name.clone()
-                        };
-                        format!("{} ({})", app_short, window_short)
-                    } else {
-                        format!("{} ({})", clean_app, window_name)
-                    }
-                } else {
-                    // Fallback to just app name if no window name
-                    if area.width < 40 {
-                        if clean_app.len() > 12 {
-                            format!("{}...", &clean_app[..9])
-                        } else {
-                            clean_app
-                        }
-                    } else {
-                        clean_app
-                    }
-                };
-
-                let display = format!("{} - {}: {}m", time, display_name, minutes);
-                ListItem::new(Line::from(display))
-            })
-            .collect::<Vec<ListItem>>()
-    );
-
-    let history_list = List::new(history_items)
-        .block(Block::default().borders(Borders::ALL).title("📜 Session History"));
-    f.render_widget(history_list, area);
-}
-
 pub fn draw_pie_chart(app: &App, f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::HierarchicalDisplayItem]) {
     // Calculate category totals - using BTreeMap for stable sorted order
     // Filter out sub-entries
@@ -909,25 +814,78 @@ pub fn draw_pie_chart(app: &App, f: &mut Frame, area: Rect, data: &[crate::ui::h
     f.render_widget(pie_chart, area);
 }
 
-pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect) {
-    // Real-time progress bars showing % of day for each app
+pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode) {
+    use chrono::Datelike;
+
+    // Progress bars showing % of selected period for each app
     let mut progress_lines = vec![];
 
-    if app.flat_daily_usage.is_empty() {
-        progress_lines.push(Line::from("No activity data yet today"));
+    // Get the correct data source based on view mode
+    let (usage_data, title, total_seconds) = match view_mode {
+        ViewMode::Daily => {
+            if app.flat_daily_usage.is_empty() {
+                progress_lines.push(Line::from("No activity data yet today"));
+                let progress = Paragraph::new(progress_lines)
+                    .block(Block::default().borders(Borders::ALL).title("📊 Today's Activity Progress"));
+                f.render_widget(progress, area);
+                return;
+            }
+            let now = Local::now();
+            let start_of_day = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Local).unwrap();
+            let secs = now.signed_duration_since(start_of_day).num_seconds() as f64;
+            (app.flat_daily_usage.clone(), "📊 Today's Activity Progress".to_string(), secs)
+        }
+        ViewMode::Weekly => {
+            // Calculate total seconds in the week
+            let now = Local::now();
+            let today = now.date_naive();
+            let days_since_sunday = today.weekday().num_days_from_sunday();
+            let week_start = today - chrono::Duration::days(days_since_sunday as i64);
+            let week_start_time = week_start.and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Local).unwrap();
+            let secs = now.signed_duration_since(week_start_time).num_seconds() as f64;
+
+            // Aggregate weekly usage from current_history
+            let mut weekly_usage: std::collections::BTreeMap<String, i64> = std::collections::BTreeMap::new();
+            for session in &app.current_history {
+                let session_date = session.start_time.date_naive();
+                if session_date >= week_start {
+                    *weekly_usage.entry(session.app_name.clone()).or_insert(0) += session.duration;
+                }
+            }
+            let weekly_vec: Vec<(String, i64)> = weekly_usage.into_iter().collect();
+            (weekly_vec, "📊 Weekly Activity Progress".to_string(), secs)
+        }
+        ViewMode::Monthly => {
+            // Calculate total seconds in the month
+            let now = Local::now();
+            let today = now.date_naive();
+            let month_start = chrono::NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today);
+            let month_start_time = month_start.and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Local).unwrap();
+            let secs = now.signed_duration_since(month_start_time).num_seconds() as f64;
+
+            // Aggregate monthly usage from current_history
+            let mut monthly_usage: std::collections::BTreeMap<String, i64> = std::collections::BTreeMap::new();
+            for session in &app.current_history {
+                let session_date = session.start_time.date_naive();
+                if session_date >= month_start {
+                    *monthly_usage.entry(session.app_name.clone()).or_insert(0) += session.duration;
+                }
+            }
+            let monthly_vec: Vec<(String, i64)> = monthly_usage.into_iter().collect();
+            (monthly_vec, "📊 Monthly Activity Progress".to_string(), secs)
+        }
+    };
+
+    if usage_data.is_empty() {
+        progress_lines.push(Line::from("No activity data"));
         let progress = Paragraph::new(progress_lines)
-            .block(Block::default().borders(Borders::ALL).title("📊 Today's Activity Progress"));
+            .block(Block::default().borders(Borders::ALL).title(title));
         f.render_widget(progress, area);
         return;
     }
 
-    // Calculate total seconds in the day so far
-    let now = Local::now();
-    let start_of_day = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_local_timezone(Local).unwrap();
-    let seconds_since_midnight = now.signed_duration_since(start_of_day).num_seconds() as f64;
-
-    // Sort apps by usage time (descending) - use flat_daily_usage for progress bars
-    let mut sorted_apps: Vec<_> = app.flat_daily_usage.iter().collect();
+    // Sort apps by usage time (descending)
+    let mut sorted_apps: Vec<_> = usage_data.iter().collect();
     sorted_apps.sort_by(|a, b| b.1.cmp(&a.1));
 
     // Limit to top apps that fit in the area
@@ -937,13 +895,13 @@ pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect) {
     // Add top margin (consistent with other cards)
     progress_lines.push(Line::from(""));
 
-    for (app_name, total_seconds) in top_apps {
+    for (app_name, duration) in top_apps {
         let clean_app_name = App::clean_app_name(app_name);
         let (_, color) = app.get_app_category(app_name);
 
-        // Calculate percentage of day
-        let percentage = if seconds_since_midnight > 0.0 {
-            ((*total_seconds as f64 / seconds_since_midnight) * 100.0).min(100.0)
+        // Calculate percentage of period
+        let percentage = if total_seconds > 0.0 {
+            ((*duration as f64 / total_seconds) * 100.0).min(100.0)
         } else {
             0.0
         };
@@ -972,11 +930,209 @@ pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect) {
         progress_lines.push(Line::from(progress_line));
     }
 
-
-
     let progress = Paragraph::new(progress_lines)
-        .block(Block::default().borders(Borders::ALL).title("📊 Today's Activity Progress"));
+        .block(Block::default().borders(Borders::ALL).title(title));
     f.render_widget(progress, area);
+}
+
+pub fn draw_sessions_timeline(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode) {
+    use chrono::{Duration, NaiveDate, Datelike, Timelike};
+
+    if area.height < 4 {
+        let msg = Paragraph::new("Terminal too small for timeline");
+        f.render_widget(msg, area);
+        return;
+    }
+
+    let now = Local::now();
+
+    // Determine timeline based on view mode and collect data
+    let (sessions_data, num_periods, title, is_daily) = match view_mode {
+        ViewMode::Daily => {
+            // For daily: show 24 hours, group sessions by hour
+            let today = now.date_naive();
+            let mut hourly: Vec<(i64, Vec<&crate::models::session::Session>)> = (0..24)
+                .map(|h| (h, vec![]))
+                .collect();
+            for session in &app.current_history {
+                if session.start_time.date_naive() == today {
+                    let hour = session.start_time.hour() as i64;
+                    if hour < 24 {
+                        hourly[hour as usize].1.push(session);
+                    }
+                }
+            }
+            (hourly, 24, "📅 Today Sessions (24-Hour Activity Timeline)", true)
+        }
+        ViewMode::Weekly => {
+            // For weekly: show 7 days
+            let date = now.date_naive();
+            let days_since_sunday = date.weekday().num_days_from_sunday() as i64;
+            let week_start = date - Duration::days(days_since_sunday);
+            let mut daily: Vec<(i64, Vec<&crate::models::session::Session>)> = (0..7)
+                .map(|d| (d, vec![]))
+                .collect();
+            for session in &app.current_history {
+                let session_date = session.start_time.date_naive();
+                if session_date >= week_start && session_date < week_start + Duration::days(7) {
+                    let day_offset = (session_date - week_start).num_days();
+                    if day_offset >= 0 && day_offset < 7 {
+                        daily[day_offset as usize].1.push(session);
+                    }
+                }
+            }
+            (daily, 7, "📅 Weekly Sessions (7-Day Activity Timeline)", false)
+        }
+        ViewMode::Monthly => {
+            // For monthly: show days in current month
+            let date = now.date_naive();
+            let month_start = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap_or(date);
+            let days_in_month = if date.month() == 12 {
+                (NaiveDate::from_ymd_opt(date.year() + 1, 1, 1).unwrap() - month_start).num_days()
+            } else {
+                (NaiveDate::from_ymd_opt(date.year(), date.month() + 1, 1).unwrap() - month_start).num_days()
+            } as i64;
+            let mut daily: Vec<(i64, Vec<&crate::models::session::Session>)> = (0..days_in_month)
+                .map(|d| (d, vec![]))
+                .collect();
+            for session in &app.current_history {
+                let session_date = session.start_time.date_naive();
+                if session_date >= month_start && session_date < month_start + Duration::days(days_in_month) {
+                    let day_offset = (session_date - month_start).num_days();
+                    if day_offset >= 0 && day_offset < days_in_month {
+                        daily[day_offset as usize].1.push(session);
+                    }
+                }
+            }
+            (daily, days_in_month, "📅 Monthly Sessions (Day-By-Day Activity Timeline)", false)
+        }
+    };
+
+    let mut lines = vec![];
+    lines.push(ratatui::text::Line::from(""));
+
+    // Use nearly full width for timeline visualization
+    let available_width = (area.width as usize).saturating_sub(2);
+    let num_periods_usize = num_periods as usize;
+
+    // Calculate block width to fill available space evenly
+    let block_width = (available_width / num_periods_usize).max(1);
+
+    let mut bar_line = vec![];
+
+    for (_, session_pair) in sessions_data.iter().enumerate() {
+        let sessions = &session_pair.1;
+        // Get dominant category color for this period
+        let color = if sessions.is_empty() {
+            // Empty period - use dim gray
+            Color::DarkGray
+        } else {
+            // Calculate dominant category by duration
+            let category_map = sessions.iter()
+                .fold(std::collections::HashMap::new(), |mut map, s| {
+                    let cat = s.category.as_deref().unwrap_or("📦 Other");
+                    *map.entry(cat.to_string()).or_insert(0i64) += s.duration;
+                    map
+                });
+
+            let dominant = category_map.into_iter()
+                .max_by_key(|(_, dur)| *dur)
+                .map(|(cat, _)| cat)
+                .unwrap_or_else(|| "📦 Other".to_string());
+
+            // Use category_from_string directly since dominant already has the emoji+name format
+            App::category_from_string(&dominant).1
+        };
+
+        // Draw colored blocks - use full block character for better visibility
+        let block_char = if sessions.is_empty() { "░" } else { "█" };
+        for _ in 0..block_width {
+            bar_line.push(ratatui::text::Span::styled(block_char, Style::default().fg(color)));
+        }
+    }
+
+    lines.push(ratatui::text::Line::from(bar_line));
+
+    // Build label line - adaptive label frequency based on available space
+    let label_interval = if is_daily {
+        if available_width > 200 {
+            1  // Show every hour
+        } else if available_width > 100 {
+            2  // Show every 2 hours
+        } else {
+            4  // Show every 4 hours
+        }
+    } else {
+        1  // Always show every day/period for weekly/monthly
+    };
+
+    let mut label_spans = vec![];
+    for idx in 0..num_periods_usize {
+        if idx as i64 % label_interval == 0 {
+            let label = match view_mode {
+                ViewMode::Daily => format!("{:02}h", idx),
+                ViewMode::Weekly => {
+                    let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+                    days[idx % 7].to_string()
+                }
+                ViewMode::Monthly => format!("{}", idx + 1),
+            };
+
+            // Calculate starting position for this label
+            let label_start = idx * block_width;
+            let next_label_start = ((idx as i64 + label_interval) as usize).min(num_periods_usize) * block_width;
+            let label_space = next_label_start.saturating_sub(label_start).max(label.len());
+
+            label_spans.push(ratatui::text::Span::raw(format!("{:<width$}", label, width = label_space)));
+        } else if idx as i64 % label_interval != (label_interval - 1) {
+            // Add spacing between labels
+            let space_width = block_width;
+            label_spans.push(ratatui::text::Span::raw(" ".repeat(space_width)));
+        }
+    }
+
+    if !label_spans.is_empty() {
+        lines.push(ratatui::text::Line::from(label_spans));
+    }
+
+    // Summary with category breakdown
+    let total_duration: i64 = sessions_data.iter()
+        .flat_map(|(_, s)| s.iter())
+        .map(|s| s.duration)
+        .sum();
+    let hours = total_duration / 3600;
+    let minutes = (total_duration % 3600) / 60;
+
+    // Build category summary for legend
+    let mut category_durations: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for (_, sessions) in &sessions_data {
+        for session in sessions {
+            let cat = session.category.as_deref().unwrap_or("Other").to_string();
+            *category_durations.entry(cat).or_insert(0) += session.duration;
+        }
+    }
+
+    let mut category_summary = vec![];
+    let mut sorted_categories: Vec<&String> = category_durations.keys().collect();
+    sorted_categories.sort_by_key(|cat| std::cmp::Reverse(category_durations[*cat]));
+
+    for cat in sorted_categories.iter().take(5) {
+        let cat_color = App::category_from_string(cat).1;
+        category_summary.push(ratatui::text::Span::styled(
+            format!("● {} ", cat),
+            Style::default().fg(cat_color),
+        ));
+    }
+
+    let mut summary_line = vec![
+        ratatui::text::Span::raw(format!("Total: {}h {}m | ", hours, minutes)),
+    ];
+    summary_line.extend(category_summary);
+    lines.push(ratatui::text::Line::from(summary_line));
+
+    let timeline = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title(title));
+    f.render_widget(timeline, area);
 }
 
 pub fn draw_afk(app: &App, f: &mut Frame, area: Rect) {

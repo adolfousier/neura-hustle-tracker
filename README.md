@@ -13,6 +13,20 @@
 This app runs in your terminal and shows you exactly where your time goes during work sessions. Built with Ratatui.
 
 ![Demo](src/screenshots/hustler-tracker-demo-new.gif)
+![Demo](src/screenshots/hustler-tracker-demo.png)
+
+## Download Pre-Built Binaries (Easiest!)
+
+**No Rust installation needed!** Download ready-to-use binaries for your platform from [GitHub Releases](https://github.com/adolfousier/neura-hustle-tracker/releases):
+
+- **Linux**: [neura_hustle_tracker-linux-x86_64](https://github.com/adolfousier/neura-hustle-tracker/releases)
+- **macOS (Intel)**: [neura_hustle_tracker-macos-x86_64](https://github.com/adolfousier/neura-hustle-tracker/releases)
+- **macOS (Apple Silicon)**: [neura_hustle_tracker-macos-aarch64](https://github.com/adolfousier/neura-hustle-tracker/releases)
+- **Windows**: [neura_hustle_tracker-windows-x86_64.exe](https://github.com/adolfousier/neura-hustle-tracker/releases)
+
+Just download, make executable on Linux/macOS (`chmod +x neura_hustle_tracker-*`), and run!
+
+**Note**: On macOS/Windows, you'll also need the daemon binary (`neura_hustle_daemon`) running in the background.
 
 ## What Does This Do?
 
@@ -83,6 +97,12 @@ Once the app is running:
 - **l** - View logs
 - **Shift+C** - See all available commands
 - **q** - Quit
+
+**Timeline Feature (v0.4.16+)**:
+- Daily view shows a 24-hour colored activity timeline at the bottom
+- Each hour is colored by your dominant activity category
+- Weekly and monthly views show daily activity patterns with matching data
+- See your category colors at a glance (Development=Yellow, Browsing=Blue, Communication=Green, Media=Magenta, Files=Cyan)
 
 The app tracks automatically. Just switch between your programs normally and it records everything.
 

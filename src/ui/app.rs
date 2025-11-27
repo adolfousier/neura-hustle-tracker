@@ -915,16 +915,12 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
         crate::ui::render::draw_bar_chart(self, f, area, title, bar_data);
     }
 
-    pub fn draw_history(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        crate::ui::render::draw_history(self, f, area);
-    }
-
     pub fn draw_pie_chart(&self, f: &mut Frame, area: ratatui::layout::Rect, data: &[HierarchicalDisplayItem]) {
         crate::ui::render::draw_pie_chart(self, f, area, data);
     }
 
-    pub fn draw_timeline(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        crate::ui::render::draw_timeline(self, f, area);
+    pub fn draw_timeline(&self, f: &mut Frame, area: ratatui::layout::Rect, view_mode: &ViewMode) {
+        crate::ui::render::draw_timeline(self, f, area, view_mode);
     }
 
     pub fn draw_afk(&self, f: &mut Frame, area: ratatui::layout::Rect) {
