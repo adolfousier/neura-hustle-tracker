@@ -58,18 +58,24 @@ pub async fn execute_rename_app(
 
     let result = match id_type {
         "app_name" => {
-            // Get the original category before renaming
             let original_category = ctx.database.get_app_category_by_name(original_value).await?.unwrap_or_else(|| "Other".to_string());
-            ctx.database.rename_app_with_category(original_value, new_name, &original_category).await
+            let rename_result = ctx.database.rename_app_with_category(original_value, new_name, &original_category).await;
+            if rename_result.is_ok() {
+                ctx.database.set_app_rename(original_value, new_name).await?;
+            }
+            rename_result
         },
         "browser_page_title" => ctx.database.rename_browser_page_title(original_value, new_name).await,
         "terminal_directory" => ctx.database.rename_terminal_directory(original_value, new_name).await,
         "editor_filename" => ctx.database.rename_editor_filename(original_value, new_name).await,
         "tmux_window_name" => ctx.database.rename_tmux_window_name(original_value, new_name).await,
         _ => {
-            // Fallback for window_name or unknown types, treat as app_name
             let original_category = ctx.database.get_app_category_by_name(original_value).await?.unwrap_or_else(|| "Other".to_string());
-            ctx.database.rename_app_with_category(original_value, new_name, &original_category).await
+            let rename_result = ctx.database.rename_app_with_category(original_value, new_name, &original_category).await;
+            if rename_result.is_ok() {
+                ctx.database.set_app_rename(original_value, new_name).await?;
+            }
+            rename_result
         }
     };
 

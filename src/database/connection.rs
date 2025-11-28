@@ -335,6 +335,31 @@ impl Database {
         Ok(category.map(|(c,)| c))
     }
 
+    pub async fn set_app_rename(&self, original_app_name: &str, renamed_app_name: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO app_renames (original_app_name, renamed_app_name)
+            VALUES ($1, $2)
+            ON CONFLICT (original_app_name)
+            DO UPDATE SET renamed_app_name = $2, updated_at = CURRENT_TIMESTAMP
+            "#
+        )
+        .bind(original_app_name)
+        .bind(renamed_app_name)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_app_rename(&self, original_app_name: &str) -> Result<Option<String>> {
+        let rename: Option<(String,)> = sqlx::query_as(
+            "SELECT renamed_app_name FROM app_renames WHERE original_app_name = $1"
+        )
+        .bind(original_app_name)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rename.map(|(r,)| r))
+    }
 
     pub async fn fix_old_categories(&self) -> Result<()> {
         // Fix any sessions with old category names that should be Development

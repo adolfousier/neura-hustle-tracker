@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.17 (2025-11-28)
+
+- **Build System Simplification**: Removed Makefile in favor of just-based build system
+  - Eliminated Makefile redundancy (functionality preserved in justfile)
+  - Cleaner project structure with single source of truth for build commands
+  - All build targets remain accessible via `just` command
+
+- **Database Schema Enhancement**: Added app rename support to database migrations
+  - New migration: `20251128000000_add_app_renames.sql`
+  - Enables tracking of application name changes for better session continuity
+  - Applied to both daemon and UI database instances
+
+- **UI Improvements**: Enhanced command interface and visual consistency
+  - Updated `src/ui/commands.rs` with refined command handling
+  - Improved database connection handling in both daemon and UI modules
+  - Better consistency between daemon and UI database operations
+
+- **Documentation Updates**: Refreshed README with latest setup and usage information
+  - Updated build instructions and command references
+  - Improved clarity on cross-platform support
+
+- **Asset Updates**: Replaced demo images with new animated GIF demonstration
+  - Renamed screenshots from `hustler-tracker-demo.*` to `hustle-tracker-demo.*` for naming consistency
+  - New GIF provides better visual overview of application features
+
 ## v0.4.16 (2025-11-27)
 
 - **Timeline Visualization**: Full-width colored activity timeline for day/week/month views

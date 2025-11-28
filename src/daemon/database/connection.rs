@@ -96,6 +96,10 @@ impl Database {
     }
 
     pub async fn apply_renames_and_categories(&self, session: &mut Session) -> Result<()> {
+        if let Some(renamed_app_name) = self.get_app_rename(&session.app_name).await? {
+            session.app_name = renamed_app_name;
+        }
+
         if let Some(title) = &session.browser_page_title {
             session.browser_page_title_renamed = self.get_browser_page_title_rename(title).await?;
             session.browser_page_title_category = self.get_browser_page_title_category(title).await?;
@@ -188,5 +192,15 @@ impl Database {
         .fetch_one(&self.pool)
         .await?;
         Ok(id.0)
+    }
+
+    pub async fn get_app_rename(&self, original_app_name: &str) -> Result<Option<String>> {
+        let rename: Option<(String,)> = sqlx::query_as(
+            "SELECT renamed_app_name FROM app_renames WHERE original_app_name = $1"
+        )
+        .bind(original_app_name)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(rename.map(|(r,)| r))
     }
 }
