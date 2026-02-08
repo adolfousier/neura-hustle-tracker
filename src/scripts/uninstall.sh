@@ -37,6 +37,16 @@ fi
 echo ""
 echo "Stopping Docker Compose and removing database..."
 cd "$PROJECT_ROOT"
+
+# Ensure docker compose plugin is available
+if ! docker compose version >/dev/null 2>&1; then
+    if command -v docker-compose >/dev/null 2>&1 && docker-compose version 2>/dev/null | grep -q "v2"; then
+        plugin_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+        mkdir -p "$plugin_dir"
+        ln -sf "$(command -v docker-compose)" "$plugin_dir/docker-compose"
+    fi
+fi
+
 docker compose down -v 2>/dev/null || echo "Docker Compose already stopped or not running"
 
 echo ""

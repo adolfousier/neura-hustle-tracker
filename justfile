@@ -49,7 +49,36 @@ build-daemon:
     @echo "Building daemon release binary..."
     cargo build --release --bin neura_hustle_daemon
 
-db-up:
+check-docker-compose:
+    #!/usr/bin/env bash
+    if docker compose version >/dev/null 2>&1; then
+        exit 0
+    fi
+    echo "Docker compose plugin not found. Attempting to set it up..."
+    # Check if standalone docker-compose v2 exists and symlink it as a plugin
+    if command -v docker-compose >/dev/null 2>&1; then
+        version=$(docker-compose version 2>/dev/null || true)
+        if echo "$version" | grep -q "v2"; then
+            plugin_dir="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+            mkdir -p "$plugin_dir"
+            ln -sf "$(command -v docker-compose)" "$plugin_dir/docker-compose"
+            echo "Symlinked docker-compose as docker compose plugin."
+            if docker compose version >/dev/null 2>&1; then
+                echo "✓ docker compose is now available!"
+                exit 0
+            fi
+        fi
+    fi
+    echo ""
+    echo "ERROR: 'docker compose' is not available."
+    echo ""
+    echo "Install it with one of:"
+    echo "  sudo apt-get install docker-compose-plugin"
+    echo "  # or see https://docs.docker.com/compose/install/"
+    echo ""
+    exit 1
+
+db-up: check-docker-compose
     @echo "Starting PostgreSQL..."
     docker compose up -d
     @echo "Waiting for database to be ready..."
