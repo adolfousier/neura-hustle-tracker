@@ -24,7 +24,13 @@ This app runs in your terminal and shows you exactly where your time goes during
 - **macOS (Apple Silicon)**: [neura_hustle_tracker-macos-aarch64](https://github.com/adolfousier/neura-hustle-tracker/releases)
 - **Windows**: [neura_hustle_tracker-windows-x86_64.exe](https://github.com/adolfousier/neura-hustle-tracker/releases)
 
-Just download, make executable on Linux/macOS (`chmod +x neura_hustle_tracker-*`), and run!
+**Prerequisites**: [Docker](https://docs.docker.com/get-docker/) must be installed and running.
+
+Download, make executable on Linux/macOS (`chmod +x neura_hustle_tracker-*`), and run. The binary will automatically:
+1. Generate database credentials (`.env` file)
+2. Start PostgreSQL via Docker Compose
+3. Run database migrations
+4. Launch the app
 
 **Note**: On macOS/Windows, you'll also need the daemon binary (`neura_hustle_daemon`) running in the background.
 
@@ -161,20 +167,32 @@ Why? On macOS/Windows, if the tracking runs in the dashboard window, it can't se
 
 ## Start on Boot (Optional)
 
-Want the app to start automatically when you log in?
+Want the app to start automatically when you log in? The daemon binary runs in the background without needing a terminal.
 
-**Linux:**
+**Linux (Desktop Autostart):**
 
 ```bash
-mkdir -p ~/.config/autostart/
+mkdir -p ~/.local/bin ~/.config/autostart
+cp target/release/neura_hustle_daemon ~/.local/bin/
 cp src/scripts/startup/neura-tracker.desktop ~/.config/autostart/
 ```
 
-Edit the file and change `/path/to/neura-hustle-tracker` to your actual path.
+If your `~/.local/bin` is not in `$PATH`, edit the `.desktop` file and set the full path in the `Exec=` line.
+
+**Linux (systemd user service - alternative):**
+
+```bash
+mkdir -p ~/.local/bin ~/.config/systemd/user
+cp target/release/neura_hustle_daemon ~/.local/bin/
+cp src/scripts/startup/neura-tracker.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now neura-tracker
+```
 
 **macOS:**
 
 ```bash
+cp target/release/neura_hustle_daemon /usr/local/bin/
 mkdir -p ~/Library/LaunchAgents/
 cp src/scripts/startup/neura-tracker.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/neura-tracker.plist
@@ -237,11 +255,45 @@ The uninstall will:
 | Terminal interface | ✅ | ❌ | ❌ |
 | Fast & lightweight | ✅ | ❌ | ❌ |
 
-## Need Help?
+## Troubleshooting
 
-- **App not starting?** Make sure Docker Desktop is running
-- **Can't see windows?** Check permissions in System Settings
-- **Database errors?** Try `just clean` then `just run`
+### Database connection errors
+
+If you see `Failed to connect to database` or `No such file or directory (os error 2)`:
+
+1. **Make sure Docker is installed and running**: `docker ps` should work without errors
+2. **Check if PostgreSQL is running**: `docker ps | grep postgres` - if nothing shows up, the database container isn't running
+3. **Restart the database**: `docker compose up -d` (from the project directory) or just re-run the binary - it will auto-start PostgreSQL
+4. **Check your .env file**: It should contain `DATABASE_URL`, `POSTGRES_USERNAME`, and `POSTGRES_PASSWORD`. If it's missing or corrupted, delete it and re-run the app to regenerate
+
+### Pre-built binary not working
+
+- The binary requires **Docker** to be installed - it auto-starts PostgreSQL via Docker Compose
+- On first run, the binary creates a `.env` file and `compose.yml` in `~/.local/share/neura-hustle-tracker/` (Linux), `~/Library/Application Support/neura-hustle-tracker/` (macOS), or `%APPDATA%\neura-hustle-tracker\` (Windows)
+- If you previously ran from source with `just run`, the binary will use the existing `.env` in your project directory
+
+### Port conflicts
+
+The app uses port **52851** for PostgreSQL. If another service is using that port:
+
+1. Check what's using it: `lsof -i :52851` (Linux/macOS) or `netstat -ano | findstr 52851` (Windows)
+2. Stop the conflicting service, or edit the port in `.env` (`DATABASE_URL`) and `compose.yml`
+
+### Wayland (Linux)
+
+If windows aren't being tracked on Wayland, install the [Window Calls GNOME extension](https://extensions.gnome.org/extension/4724/window-calls/).
+
+### macOS permissions
+
+The **Terminal application** (not the daemon) needs these permissions in System Settings > Privacy & Security:
+- Accessibility
+- Screen & System Audio Recording
+- Input Monitoring
+
+### General
+
+- **App not starting?** Make sure Docker is running
+- **Database errors?** Try `just clean` then `just run` (from source), or delete `~/.local/share/neura-hustle-tracker/` and re-run the binary
 - **Want to remove the app?** Use `just uninstall` to safely delete everything
 
 ## Contributing

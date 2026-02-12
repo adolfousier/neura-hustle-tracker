@@ -1,6 +1,8 @@
 [Desktop Entry]
 Type=Application
-Exec=alacritty -e tmux & sleep 2; xdotool search --class Alacritty windowactivate --sync key ctrl+b ctrl+r; sleep 10; cd /srv/rs/neura-hustle-tracker && make run
 Name=Neura Hustle Tracker
-Comment=Start Neura Hustle Tracker on login
+Comment=Background activity tracker daemon
+Exec=neura_hustle_daemon
+Terminal=false
 X-GNOME-Autostart-enabled=true
+NoDisplay=true

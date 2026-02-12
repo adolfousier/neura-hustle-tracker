@@ -1,0 +1,14 @@
+[Unit]
+Description=Neura Hustle Tracker Daemon
+After=network.target docker.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/neura_hustle_daemon
+Restart=on-failure
+RestartSec=10
+# For X11 window detection; on Wayland also set WAYLAND_DISPLAY and XDG_RUNTIME_DIR
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target

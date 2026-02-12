@@ -2,7 +2,40 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use sqlx::PgPool as Pool;
 use crate::models::session::Session;
-use std::fs;
+
+struct EmbeddedMigration {
+    version: i64,
+    description: &'static str,
+    sql: &'static str,
+}
+
+const MIGRATIONS: &[EmbeddedMigration] = &[
+    EmbeddedMigration {
+        version: 20231019000000,
+        description: "20231019000000_initial_schema.sql",
+        sql: include_str!("migrations/20231019000000_initial_schema.sql"),
+    },
+    EmbeddedMigration {
+        version: 20251020000000,
+        description: "20251020000000_add_parsed_data_columns.sql",
+        sql: include_str!("migrations/20251020000000_add_parsed_data_columns.sql"),
+    },
+    EmbeddedMigration {
+        version: 20251030000000,
+        description: "20251030000000_add_idle_tracking.sql",
+        sql: include_str!("migrations/20251030000000_add_idle_tracking.sql"),
+    },
+    EmbeddedMigration {
+        version: 20251103000000,
+        description: "20251103000000_add_idle_accumulation.sql",
+        sql: include_str!("migrations/20251103000000_add_idle_accumulation.sql"),
+    },
+    EmbeddedMigration {
+        version: 20251128000000,
+        description: "20251128000000_add_app_renames.sql",
+        sql: include_str!("migrations/20251128000000_add_app_renames.sql"),
+    },
+];
 
 pub struct Database {
     pool: Pool,
@@ -12,14 +45,12 @@ impl Database {
     pub async fn new(database_url: &str) -> Result<Self> {
         let pool = PgPool::connect(database_url).await?;
 
-        // Run runtime migrations - ensures migrations are applied regardless of when they were created
         Self::run_migrations(&pool).await?;
 
         Ok(Self { pool })
     }
 
     async fn run_migrations(pool: &Pool) -> Result<()> {
-        // Ensure _sqlx_migrations table exists with proper schema
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS _sqlx_migrations (
@@ -35,83 +66,54 @@ impl Database {
         .execute(pool)
         .await?;
 
-        // Read all migration files
-        let migrations_dir = "src/database/migrations";
-        let mut migration_files: Vec<_> = fs::read_dir(migrations_dir)?
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "sql") {
-                    Some(path)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        migration_files.sort();
-
-        // Apply each migration that hasn't been applied yet
-        for migration_path in migration_files {
-            let filename = migration_path.file_name().unwrap().to_string_lossy().to_string();
-
-            // Extract version from filename (e.g., "20231019000000_initial_schema.sql" -> 20231019000000)
-            let version: i64 = filename.split('_').next().unwrap_or("0").parse().unwrap_or(0);
-
-            // Check if this migration has already been applied
+        for migration in MIGRATIONS {
             let already_applied: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version = $1)"
             )
-            .bind(version)
+            .bind(migration.version)
             .fetch_one(pool)
             .await?;
 
             if !already_applied {
-                let sql_content = fs::read_to_string(&migration_path)?;
-
-                // Calculate checksum of migration content
                 use sha2::{Sha256, Digest};
                 let mut hasher = Sha256::new();
-                hasher.update(sql_content.as_bytes());
+                hasher.update(migration.sql.as_bytes());
                 let checksum = hasher.finalize().to_vec();
 
-                // Execute the migration
                 let start = std::time::Instant::now();
-                match sqlx::raw_sql(&sql_content).execute(pool).await {
+                match sqlx::raw_sql(migration.sql).execute(pool).await {
                     Ok(_) => {
                         let execution_time = start.elapsed().as_millis() as i64;
-                        // Record migration as successful
                         sqlx::query(
                             r#"
                             INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
                             VALUES ($1, $2, true, $3, $4)
                             "#,
                         )
-                        .bind(version)
-                        .bind(&filename)
+                        .bind(migration.version)
+                        .bind(migration.description)
                         .bind(&checksum)
                         .bind(execution_time)
                         .execute(pool)
                         .await?;
 
-                        log::info!("Applied migration: {} ({}ms)", filename, execution_time);
+                        log::info!("Applied migration: {} ({}ms)", migration.description, execution_time);
                     }
                     Err(e) => {
-                        // Record migration as failed
                         sqlx::query(
                             r#"
                             INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
                             VALUES ($1, $2, false, $3, 0)
                             "#,
                         )
-                        .bind(version)
-                        .bind(&filename)
+                        .bind(migration.version)
+                        .bind(migration.description)
                         .bind(&checksum)
                         .execute(pool)
                         .await
                         .ok();
 
-                        return Err(anyhow::anyhow!("Migration failed: {}: {}", filename, e));
+                        return Err(anyhow::anyhow!("Migration failed: {}: {}", migration.description, e));
                     }
                 }
             }

@@ -1,6 +1,6 @@
 [package]
 name = "neura_hustle_tracker"
-version = "0.4.17"
+version = "0.4.18"
 edition = "2024"
 
 [[bin]]
@@ -30,3 +30,4 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio", "postgres", "chrono"] }
 tokio = { version = "1.48.0", features = ["full"] }
 zbus = { version = "4.0", default-features = false, features = ["tokio"] }
 sha2 = "0.10.9"
+dirs = "6"

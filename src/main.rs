@@ -71,10 +71,16 @@ async fn main() -> Result<()> {
     }
 
     log::info!("Starting Neura Hustle Tracker");
-    let settings = Settings::new().unwrap();
+    let settings = match Settings::init().await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to initialize: {}", e);
+            std::process::exit(1);
+        }
+    };
     log::info!("Connecting to database...");
     log::info!("Database URL: {}", settings.database_url);
-    log::info!("Environment variables loaded: POSTGRES_USERNAME={}, POSTGRES_PASSWORD=***", 
+    log::info!("Environment variables loaded: POSTGRES_USERNAME={}, POSTGRES_PASSWORD=***",
                env::var("POSTGRES_USERNAME").unwrap_or_else(|_| "NOT_SET".to_string()));
     let database = match Database::new(&settings.database_url).await {
         Ok(db) => {
@@ -86,8 +92,8 @@ async fn main() -> Result<()> {
                 log::error!("Database connection failed: {}", e);
                 log::error!("Full error details: {:?}", e);
             }
-            eprintln!("❌ Failed to connect to database. Please check:");
-            eprintln!("  - Database is running (make daemon-status)");
+            eprintln!("Failed to connect to database. Please check:");
+            eprintln!("  - Database is running (docker ps)");
             eprintln!("  - .env file has correct DATABASE_URL");
             eprintln!("  - Port number in DATABASE_URL is valid");
             eprintln!("Error: {}", e);

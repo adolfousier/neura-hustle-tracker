@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.4.18 (2026-02-12)
+
+- **Self-Contained Binary**: Pre-built binaries now auto-start PostgreSQL via Docker Compose
+  - Binary embeds `compose.yml` at compile time and writes it to the app data directory on first run
+  - Automatically detects if database is unreachable and starts it via `docker compose up -d`
+  - Polls database readiness with retry loop (30s timeout) before connecting
+  - Supports both `docker compose` (v2 plugin) and standalone `docker-compose` with automatic fallback
+  - App data stored in platform-standard directories: `~/.local/share/neura-hustle-tracker/` (Linux), `~/Library/Application Support/neura-hustle-tracker/` (macOS), `%APPDATA%\neura-hustle-tracker\` (Windows)
+  - Backward compatible: existing `.env` in project directory (from `just run` workflow) takes priority
+
+- **Embedded Migrations**: Database migrations now compiled into the binary via `include_str!`
+  - Replaces filesystem-based migration runner that required `src/database/migrations/` at runtime
+  - Pre-built binaries are now fully self-contained with no external file dependencies
+  - Daemon binary now also runs migrations on startup (previously skipped)
+
+- **Simplified Linux Startup**: Rewrote `.desktop` autostart file
+  - Removed dependency on Alacritty, tmux, xdotool, and hardcoded paths
+  - Daemon runs headless (`Terminal=false`) - no terminal emulator required
+  - Added systemd user service file (`neura-tracker.service`) as an alternative to `.desktop` autostart
+
+- **Simplified macOS Startup**: Rewrote launchd plist
+  - Removed osascript wrapper, `find` command, and 30-second sleep delay
+  - Direct daemon launch with `KeepAlive` for automatic crash recovery
+
+- **Improved Error Messages**: Fixed stale references to `make` commands
+  - Error messages now reference `docker ps` instead of `make daemon-status`
+  - Clearer guidance when database connection fails
+
+- **Documentation**: Updated README with troubleshooting section
+  - Added troubleshooting for database connection errors, pre-built binary setup, port conflicts, Wayland, and macOS permissions
+  - Updated pre-built binary section to explain Docker requirement and auto-setup flow
+  - Updated Start on Boot section with simplified instructions and systemd option
+
+- **Dependencies**: Updated all dependencies to latest versions
+
 ## v0.4.17 (2025-11-28)
 
 - **Build System Simplification**: Removed Makefile in favor of just-based build system
