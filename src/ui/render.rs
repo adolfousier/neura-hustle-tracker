@@ -74,12 +74,15 @@ pub fn draw(app: &App, f: &mut Frame) {
                     let duration = item.duration;
                     let hours = duration / 3600;
                     let minutes = (duration % 3600) / 60;
+                    let seconds = duration % 60;
                     let prefix = if i == *selected_index { "→ " } else { "  " };
 
                     let time_display = if hours > 0 {
-                        format!("{}h {}m", hours, minutes)
+                        format!("{}h {}m {}s", hours, minutes, seconds)
+                    } else if minutes > 0 {
+                        format!("{}m {}s", minutes, seconds)
                     } else {
-                        format!("{}m", minutes)
+                        format!("{}s", seconds)
                     };
 
                     let clean_app = App::clean_app_name(&item.display_name);
@@ -134,12 +137,15 @@ pub fn draw(app: &App, f: &mut Frame) {
                     let duration = item.duration;
                     let hours = duration / 3600;
                     let minutes = (duration % 3600) / 60;
+                    let seconds = duration % 60;
                     let prefix = if actual_index == *selected_index { "→ " } else { "  " };
 
                     let time_display = if hours > 0 {
-                        format!("{}h {}m", hours, minutes)
+                        format!("{}h {}m {}s", hours, minutes, seconds)
+                    } else if minutes > 0 {
+                        format!("{}m {}s", minutes, seconds)
                     } else {
-                        format!("{}m", minutes)
+                        format!("{}s", seconds)
                     };
 
                     let clean_app = App::clean_app_name(&item.display_name);
@@ -324,7 +330,12 @@ pub fn draw(app: &App, f: &mut Frame) {
                     clean_app
                 };
 
-                let display = format!("{}  {} - {}m", time, display_name, minutes);
+                let seconds = session.duration % 60;
+                let display = if minutes > 0 {
+                    format!("{}  {} - {}m {}s", time, display_name, minutes, seconds)
+                } else {
+                    format!("{}  {} - {}s", time, display_name, seconds)
+                };
                 let style = if idx == 0 && start_idx == 0 {
                     Style::default().fg(Color::Yellow)  // Highlight first (most recent)
                 } else {
@@ -693,6 +704,7 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
 
         let hours = item.duration / 3600;
         let minutes = (item.duration % 3600) / 60;
+        let seconds = item.duration % 60;
 
         // Check if this is a child item (hierarchical sub-entry)
         let is_child = item.is_sub_entry;
@@ -710,9 +722,11 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
         };
 
         let time_str = if hours > 0 {
-            format!("{}h {}m", hours, minutes)
+            format!("{}h {}m {}s", hours, minutes, seconds)
+        } else if minutes > 0 {
+            format!("{}m {}s", minutes, seconds)
         } else {
-            format!("{}m", minutes)
+            format!("{}s", seconds)
         };
 
         // Format display based on whether it's a parent or child entry
@@ -750,10 +764,13 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
         .sum();
     let total_hours = total_duration / 3600;
     let total_minutes = (total_duration % 3600) / 60;
+    let total_seconds = total_duration % 60;
     let stats_title = if total_hours > 0 {
-        format!("📈 Detailed Stats (Total: {}h {}m)", total_hours, total_minutes)
+        format!("📈 Detailed Stats (Total: {}h {}m {}s)", total_hours, total_minutes, total_seconds)
+    } else if total_minutes > 0 {
+        format!("📈 Detailed Stats (Total: {}m {}s)", total_minutes, total_seconds)
     } else {
-        format!("📈 Detailed Stats (Total: {}m)", total_minutes)
+        format!("📈 Detailed Stats (Total: {}s)", total_seconds)
     };
 
     let stats_list = List::new(stats_items)
@@ -795,10 +812,13 @@ pub fn draw_pie_chart(app: &App, f: &mut Frame, area: Rect, data: &[crate::ui::h
             let bar = "█".repeat(bar_length);
             let hours = duration / 3600;
             let minutes = (duration % 3600) / 60;
+            let seconds = duration % 60;
             let time_str = if hours > 0 {
-                format!("{}h {}m", hours, minutes)
+                format!("{}h {}m {}s", hours, minutes, seconds)
+            } else if minutes > 0 {
+                format!("{}m {}s", minutes, seconds)
             } else {
-                format!("{}m", minutes)
+                format!("{}s", seconds)
             };
 
             pie_lines.push(Line::from(vec![
@@ -1255,10 +1275,13 @@ pub fn draw_breakdown_section_with_style(
         for (name, duration) in data[start_idx..end_idx].iter() {
             let hours = duration / 3600;
             let minutes = (duration % 3600) / 60;
+            let seconds = duration % 60;
             let time_str = if hours > 0 {
-                format!("{}h {}m", hours, minutes)
+                format!("{}h {}m {}s", hours, minutes, seconds)
+            } else if minutes > 0 {
+                format!("{}m {}s", minutes, seconds)
             } else {
-                format!("{}m", minutes)
+                format!("{}s", seconds)
             };
 
             // For categories, extract color from category name
@@ -1298,10 +1321,13 @@ pub fn draw_file_breakdown_section_with_style(
         for (filename, language, duration) in app.file_breakdown[start_idx..end_idx].iter() {
             let hours = duration / 3600;
             let minutes = (duration % 3600) / 60;
+            let seconds = duration % 60;
             let time_str = if hours > 0 {
-                format!("{}h {}m", hours, minutes)
+                format!("{}h {}m {}s", hours, minutes, seconds)
+            } else if minutes > 0 {
+                format!("{}m {}s", minutes, seconds)
             } else {
-                format!("{}m", minutes)
+                format!("{}s", seconds)
             };
 
             let display = format!("  {} ({})  {}", filename, language, time_str);
