@@ -12,7 +12,7 @@
 
 This app runs in your terminal and shows you exactly where your time goes during work sessions. Built with Ratatui.
 
-https://github.com/user-attachments/assets/1fef54d5-15ce-46cc-bb55-e029cfad5aae
+<video src="https://github.com/user-attachments/assets/1fef54d5-15ce-46cc-bb55-e029cfad5aae" controls></video>
 ![Demo](src/screenshots/hustle-tracker-demo.png)
 
 ## Download Pre-Built Binaries (Easiest!)
