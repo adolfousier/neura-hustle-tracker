@@ -307,7 +307,7 @@ impl App {
         ).await {
             Ok(response) => {
                 let idle_time: u64 = response.body().deserialize()?;
-                return Ok((idle_time / 1000) as u32);
+                Ok((idle_time / 1000) as u32)
             }
             Err(_) => {
                 // Core monitor doesn't exist, try to create one
@@ -446,32 +446,32 @@ impl App {
                     log::info!("System sleep detected (gap: {:.1} minutes), creating AFK session for sleep period",
                               time_since_last_check.as_secs_f64() / 60.0);
                     // End current session and start AFK session for the sleep period
-                    if let Some(ref mut session) = self.current_session {
-                        if !session.is_afk.unwrap_or(false) {
-                            // Save the current session up to sleep time
-                            let mut old_session = self.current_session.take().unwrap();
-                            let sleep_start_time = Local::now() - chrono::Duration::from_std(time_since_last_check).unwrap_or(chrono::Duration::minutes(0));
-                            old_session.duration = sleep_start_time.signed_duration_since(old_session.start_time).num_seconds();
+                    if let Some(ref session) = self.current_session
+                        && !session.is_afk.unwrap_or(false)
+                    {
+                        // Save the current session up to sleep time
+                        let mut old_session = self.current_session.take().unwrap();
+                        let sleep_start_time = Local::now() - chrono::Duration::from_std(time_since_last_check).unwrap_or(chrono::Duration::minutes(0));
+                        old_session.duration = sleep_start_time.signed_duration_since(old_session.start_time).num_seconds();
 
-                            if let Err(e) = self.database.insert_session(&old_session).await {
-                                log::error!("Failed to save session during sleep detection: {}", e);
-                            } else {
-                                log::info!("Session saved due to system sleep: {} for {:.1} minutes",
-                                          old_session.app_name, old_session.duration as f64 / 60.0);
-                            }
-
-                            // Start AFK session for sleep period with is_afk=true
-                            self.switch_app_with_afk("AFK".to_string(), Some(true)).await?;
-                            if let Some(ref mut new_session) = self.current_session {
-                                new_session.start_time = sleep_start_time;
-                                // CRITICAL FIX: Reset last_input to sleep_start_time so Wayland idle monitoring
-                                // doesn't immediately reset the AFK timer when system wakes up
-                                *self.last_input.lock().unwrap() = sleep_start_time;
-                                log::info!("Reset last_input to sleep_start_time to preserve AFK duration across sleep");
-                            }
-
-                            // Now continue with normal AFK check
+                        if let Err(e) = self.database.insert_session(&old_session).await {
+                            log::error!("Failed to save session during sleep detection: {}", e);
+                        } else {
+                            log::info!("Session saved due to system sleep: {} for {:.1} minutes",
+                                      old_session.app_name, old_session.duration as f64 / 60.0);
                         }
+
+                        // Start AFK session for sleep period with is_afk=true
+                        self.switch_app_with_afk("AFK".to_string(), Some(true)).await?;
+                        if let Some(ref mut new_session) = self.current_session {
+                            new_session.start_time = sleep_start_time;
+                            // CRITICAL FIX: Reset last_input to sleep_start_time so Wayland idle monitoring
+                            // doesn't immediately reset the AFK timer when system wakes up
+                            *self.last_input.lock().unwrap() = sleep_start_time;
+                            log::info!("Reset last_input to sleep_start_time to preserve AFK duration across sleep");
+                        }
+
+                        // Now continue with normal AFK check
                     }
                 }
 
@@ -538,21 +538,21 @@ impl App {
                 }
             }
 
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind != KeyEventKind::Press {
-                        continue;
-                    }
+            if event::poll(Duration::from_millis(100))?
+                && let Event::Key(key) = event::read()?
+            {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
 
-                    log::debug!("Key pressed: {:?} in state: {:?}", key.code, self.state);
-                    self.logs.push(format!("[{}] Key: {:?} State: {:?}", Local::now().format("%H:%M:%S"), key.code, self.state));
+                log::debug!("Key pressed: {:?} in state: {:?}", key.code, self.state);
+                self.logs.push(format!("[{}] Key: {:?} State: {:?}", Local::now().format("%H:%M:%S"), key.code, self.state));
 
                      let dashboard_view_mode = match &self.state {
                          AppState::Dashboard { view_mode } => Some(view_mode.clone()),
                          _ => None,
                      };
-                     if dashboard_view_mode.is_some() {
-                         let view_mode = dashboard_view_mode.as_ref().unwrap();
+                     if let Some(ref view_mode) = dashboard_view_mode {
                          match key.code {
                              KeyCode::Char('q') => break,
                              KeyCode::Char('r') => self.start_app_selection(),
@@ -818,18 +818,17 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
                              _ => {}
                          }
                      }
-                }
             }
 
             // Auto save every hour
-            if last_save.elapsed() >= save_interval {
-                if let Some(session) = &mut self.current_session {
-                    session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
-                    if let Err(e) = self.database.insert_session(session).await {
-                        log::error!("Failed to auto save session: {}", e);
-                    } else {
-                        last_save = Instant::now();
-                    }
+            if last_save.elapsed() >= save_interval
+                && let Some(session) = &mut self.current_session
+            {
+                session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
+                if let Err(e) = self.database.insert_session(session).await {
+                    log::error!("Failed to auto save session: {}", e);
+                } else {
+                    last_save = Instant::now();
                 }
             }
 
@@ -859,16 +858,16 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
                 if let Some(current_session) = &self.current_session {
                     let current_duration = Local::now().signed_duration_since(current_session.start_time).num_seconds();
                     // Update the most recent session in history if it matches the current one
-                    if let Some(latest_session) = self.current_history.first_mut() {
-                        if latest_session.app_name == current_session.app_name &&
-                           latest_session.start_time == current_session.start_time {
-                            latest_session.duration = current_duration;
-                            // Update renamed fields for persistence
-                            latest_session.browser_page_title_renamed = current_session.browser_page_title_renamed.clone();
-                            latest_session.terminal_directory_renamed = current_session.terminal_directory_renamed.clone();
-                            latest_session.editor_filename_renamed = current_session.editor_filename_renamed.clone();
-                            latest_session.tmux_window_name_renamed = current_session.tmux_window_name_renamed.clone();
-                        }
+                    if let Some(latest_session) = self.current_history.first_mut()
+                        && latest_session.app_name == current_session.app_name
+                        && latest_session.start_time == current_session.start_time
+                    {
+                        latest_session.duration = current_duration;
+                        // Update renamed fields for persistence
+                        latest_session.browser_page_title_renamed = current_session.browser_page_title_renamed.clone();
+                        latest_session.terminal_directory_renamed = current_session.terminal_directory_renamed.clone();
+                        latest_session.editor_filename_renamed = current_session.editor_filename_renamed.clone();
+                        latest_session.tmux_window_name_renamed = current_session.tmux_window_name_renamed.clone();
                     }
                 }
 
@@ -1148,11 +1147,11 @@ AppState::BreakdownDashboard { view_mode, selected_panel, panel_scrolls } => {
     pub fn get_app_category(&self, app: &str) -> (String, Color) {
         // First try to find stored category in history
         for session in &self.current_history {
-            if session.app_name == app {
-                if let Some(stored_category) = &session.category {
-                    // Map stored category string to emoji+name and color
-                    return Self::category_from_string(stored_category);
-                }
+            if session.app_name == app
+                && let Some(stored_category) = &session.category
+            {
+                // Map stored category string to emoji+name and color
+                return Self::category_from_string(stored_category);
             }
         }
         // Fall back to pattern matching for backward compatibility

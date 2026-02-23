@@ -353,6 +353,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn get_app_rename(&self, original_app_name: &str) -> Result<Option<String>> {
         let rename: Option<(String,)> = sqlx::query_as(
             "SELECT renamed_app_name FROM app_renames WHERE original_app_name = $1"

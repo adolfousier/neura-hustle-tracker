@@ -36,11 +36,10 @@ pub fn inspect_process_tree(pid: u64) -> Option<ProcessInfo> {
                 info.has_tmux = true;
                 // Try to get session name from cmdline
                 for arg in cmdline.split('\0').skip(1) {
-                    if arg.starts_with("-t") || arg.starts_with("-s") {
-                        if let Some(session) = arg.split('=').nth(1).or_else(|| arg.split(' ').nth(1)) {
+                    if (arg.starts_with("-t") || arg.starts_with("-s"))
+                        && let Some(session) = arg.split('=').nth(1).or_else(|| arg.split(' ').nth(1)) {
                             info.tmux_session = Some(session.to_string());
                         }
-                    }
                 }
             }
 
@@ -76,8 +75,8 @@ pub fn inspect_process_tree(pid: u64) -> Option<ProcessInfo> {
             "".to_string()
         };
         let cmd = format!("tmux list-windows {} -F \"#{{window_name}}:#{{window_active}}\"", session_arg);
-        if let Ok(output) = std::process::Command::new("sh").arg("-c").arg(&cmd).output() {
-            if output.status.success() {
+        if let Ok(output) = std::process::Command::new("sh").arg("-c").arg(&cmd).output()
+            && output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
                     if let Some(colon) = line.rfind(':') {
@@ -90,7 +89,6 @@ pub fn inspect_process_tree(pid: u64) -> Option<ProcessInfo> {
                     }
                 }
             }
-        }
     }
 
     Some(info)

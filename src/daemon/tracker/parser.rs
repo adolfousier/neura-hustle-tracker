@@ -109,16 +109,14 @@ fn is_file_manager(app_name: &str) -> bool {
 /// Pattern: "(notification_count) Page Title — Browser Name" or "Page Title — Browser Name"
 fn parse_browser(window_name: &str, parsed: &mut ParsedSessionData) {
     // Extract notification count if present
-    if let Some(start) = window_name.find('(') {
-        if let Some(end) = window_name.find(')') {
-            if end > start {
+    if let Some(start) = window_name.find('(')
+        && let Some(end) = window_name.find(')')
+            && end > start {
                 let count_str = &window_name[start + 1..end];
                 if let Ok(count) = count_str.parse::<i32>() {
                     parsed.browser_notification_count = Some(count);
                 }
             }
-        }
-    }
 
     // Extract page title (remove browser name and notification count)
     let title = window_name
@@ -301,14 +299,13 @@ fn extract_tmux_info(title: &str) -> (String, Option<(String, Option<i32>)>) {
     }
 
     // Pattern 3: " - tmux (window_name)"
-    if let Some(tmux_start) = title_lower.find(" - tmux (") {
-        if let Some(close_paren) = title[tmux_start..].find(')') {
+    if let Some(tmux_start) = title_lower.find(" - tmux (")
+        && let Some(close_paren) = title[tmux_start..].find(')') {
             let window_name_start = tmux_start + 9; // Skip " - tmux ("
             let window_name = title[window_name_start..tmux_start + close_paren].trim().to_string();
             let cleaned = title[..tmux_start].trim().to_string();
             return (cleaned, Some((window_name, None)));
         }
-    }
 
     // Pattern 4: Simple "window_name - tmux"
     if let Some(tmux_pos) = title_lower.find(" - tmux") {
@@ -317,13 +314,12 @@ fn extract_tmux_info(title: &str) -> (String, Option<(String, Option<i32>)>) {
     }
 
     // Pattern 5: Alacritty/tmux common format: "tmux [window_name] - ..."
-    if let Some(bracket_start) = title_lower.find("tmux [") {
-        if let Some(bracket_end) = title[bracket_start..].find(']') {
+    if let Some(bracket_start) = title_lower.find("tmux [")
+        && let Some(bracket_end) = title[bracket_start..].find(']') {
             let window_name = title[bracket_start + 6..bracket_start + bracket_end].trim().to_string();
             let cleaned = title[..bracket_start].trim().to_string() + &title[bracket_start + bracket_end + 1..];
             return (cleaned.trim().to_string(), Some((window_name, None)));
         }
-    }
 
     // Pattern 6: Look for tmux in title and extract window name from context
     if title_lower.contains("tmux") {
@@ -346,15 +342,14 @@ fn extract_tmux_info(title: &str) -> (String, Option<(String, Option<i32>)>) {
 
 /// Expand tilde (~) to home directory
 fn expand_tilde(path: &str) -> String {
-    if path.starts_with('~') {
-        if let Ok(home) = std::env::var("HOME") {
+    if path.starts_with('~')
+        && let Ok(home) = std::env::var("HOME") {
             if path == "~" {
                 return home;
             } else if path.starts_with("~/") {
                 return home + &path[1..];
             }
         }
-    }
     path.to_string()
 }
 
@@ -372,7 +367,7 @@ fn extract_directory_fallback(title: &str) -> Option<String> {
     // Look for ~ followed by path
     if let Some(tilde_pos) = title.find('~') {
         let after_tilde = &title[tilde_pos..];
-        if after_tilde.len() > 1 && (after_tilde.starts_with("~/") || after_tilde.chars().nth(1).map_or(false, |c| c.is_alphabetic())) {
+        if after_tilde.len() > 1 && (after_tilde.starts_with("~/") || after_tilde.chars().nth(1).is_some_and(|c| c.is_alphabetic())) {
             return Some(after_tilde.trim().to_string());
         }
     }
@@ -406,11 +401,10 @@ fn extract_project_name(path: &str) -> Option<String> {
             }
 
             // Fallback to first directory after home
-            if let Some(first_dir) = parts.first() {
-                if !first_dir.is_empty() {
+            if let Some(first_dir) = parts.first()
+                && !first_dir.is_empty() {
                     return Some(first_dir.to_string());
                 }
-            }
         }
     }
 
@@ -424,7 +418,7 @@ fn extract_project_name(path: &str) -> Option<String> {
         let part_lower = part.to_lowercase();
         if !part.is_empty() && *part != "." && *part != ".." && !skip_dirs.contains(&part_lower.as_str()) {
             // Additional heuristics: prefer directories that look like projects
-            if part.chars().next().map_or(false, |c| c.is_alphabetic()) && part.len() >= 2 {
+            if part.chars().next().is_some_and(|c| c.is_alphabetic()) && part.len() >= 2 {
                 return Some(part.to_string());
             }
         }

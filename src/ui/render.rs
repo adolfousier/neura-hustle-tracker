@@ -421,11 +421,11 @@ pub fn draw(app: &App, f: &mut Frame) {
                     Style::default()
                 };
 
-                draw_breakdown_section_with_style(f, sections[0], "📦 Categories", &app.category_breakdown, Color::Magenta, true, category_style, panel_scrolls[0]);
-                draw_breakdown_section_with_style(f, sections[1], "🌐 Browser Services", &app.browser_breakdown, Color::Blue, false, browser_style, panel_scrolls[1]);
-                draw_breakdown_section_with_style(f, sections[2], "📁 Projects", &app.project_breakdown, Color::Yellow, false, project_style, panel_scrolls[2]);
+                draw_breakdown_section_with_style(f, sections[0], BreakdownConfig { title: "📦 Categories", data: &app.category_breakdown, color: Color::Magenta, is_category: true, style: category_style, scroll_position: panel_scrolls[0] });
+                draw_breakdown_section_with_style(f, sections[1], BreakdownConfig { title: "🌐 Browser Services", data: &app.browser_breakdown, color: Color::Blue, is_category: false, style: browser_style, scroll_position: panel_scrolls[1] });
+                draw_breakdown_section_with_style(f, sections[2], BreakdownConfig { title: "📁 Projects", data: &app.project_breakdown, color: Color::Yellow, is_category: false, style: project_style, scroll_position: panel_scrolls[2] });
                 app.draw_file_breakdown_section_with_style(f, sections[3], panel_scrolls[3], file_style);
-                draw_breakdown_section_with_style(f, sections[4], "💻 Terminal Sessions", &app.terminal_breakdown, Color::Green, false, terminal_style, panel_scrolls[4]);
+                draw_breakdown_section_with_style(f, sections[4], BreakdownConfig { title: "💻 Terminal Sessions", data: &app.terminal_breakdown, color: Color::Green, is_category: false, style: terminal_style, scroll_position: panel_scrolls[4] });
             } else {
                 // Grid layout for larger screens
                 let rows = Layout::default()
@@ -479,11 +479,11 @@ pub fn draw(app: &App, f: &mut Frame) {
                     Style::default()
                 };
 
-                draw_breakdown_section_with_style(f, row1_cols[0], "📦 Categories", &app.category_breakdown, Color::Magenta, true, category_style, panel_scrolls[0]);
-                draw_breakdown_section_with_style(f, row1_cols[1], "🌐 Browser Services", &app.browser_breakdown, Color::Blue, false, browser_style, panel_scrolls[1]);
-                draw_breakdown_section_with_style(f, row2_cols[0], "📁 Projects", &app.project_breakdown, Color::Yellow, false, project_style, panel_scrolls[2]);
+                draw_breakdown_section_with_style(f, row1_cols[0], BreakdownConfig { title: "📦 Categories", data: &app.category_breakdown, color: Color::Magenta, is_category: true, style: category_style, scroll_position: panel_scrolls[0] });
+                draw_breakdown_section_with_style(f, row1_cols[1], BreakdownConfig { title: "🌐 Browser Services", data: &app.browser_breakdown, color: Color::Blue, is_category: false, style: browser_style, scroll_position: panel_scrolls[1] });
+                draw_breakdown_section_with_style(f, row2_cols[0], BreakdownConfig { title: "📁 Projects", data: &app.project_breakdown, color: Color::Yellow, is_category: false, style: project_style, scroll_position: panel_scrolls[2] });
                 app.draw_file_breakdown_section_with_style(f, row2_cols[1], panel_scrolls[3], file_style);
-                draw_breakdown_section_with_style(f, row3_area, "💻 Terminal Sessions", &app.terminal_breakdown, Color::Green, false, terminal_style, panel_scrolls[4]);
+                draw_breakdown_section_with_style(f, row3_area, BreakdownConfig { title: "💻 Terminal Sessions", data: &app.terminal_breakdown, color: Color::Green, is_category: false, style: terminal_style, scroll_position: panel_scrolls[4] });
             }
         }
     }
@@ -686,7 +686,7 @@ pub fn draw_bar_chart(app: &App, f: &mut Frame, area: Rect, title: &str, bar_dat
 
 pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::HierarchicalDisplayItem], app: &App) {
     // Adaptive number of items based on available height - more items for hierarchical view
-    let max_items = (area.height.saturating_sub(3) as usize).min(30).max(5);
+    let max_items = (area.height.saturating_sub(3) as usize).clamp(5, 30);
 
     let mut stats_items: Vec<ListItem> = Vec::new();
 
@@ -695,9 +695,8 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
 
     // Group data hierarchically by category
     // We'll detect if an item is a sub-entry
-    let mut shown_items = 0;
     let mut last_parent_color = Color::White;
-    for item in data.iter() {
+    for (shown_items, item) in data.iter().enumerate() {
         if shown_items >= max_items {
             break;
         }
@@ -755,7 +754,6 @@ pub fn draw_stats(f: &mut Frame, area: Rect, data: &[crate::ui::hierarchical::Hi
         };
 
         stats_items.push(ListItem::new(Line::from(display)).style(item_style));
-        shown_items += 1;
     }
 
     let total_duration: i64 = data.iter()
@@ -909,7 +907,7 @@ pub fn draw_timeline(app: &App, f: &mut Frame, area: Rect, view_mode: &ViewMode)
     sorted_apps.sort_by(|a, b| b.1.cmp(&a.1));
 
     // Limit to top apps that fit in the area
-    let max_items = (area.height.saturating_sub(4) as usize).min(10).max(3);
+    let max_items = (area.height.saturating_sub(4) as usize).clamp(3, 10);
     let top_apps = &sorted_apps[..sorted_apps.len().min(max_items)];
 
     // Add top margin (consistent with other cards)
@@ -996,7 +994,7 @@ pub fn draw_sessions_timeline(app: &App, f: &mut Frame, area: Rect, view_mode: &
                 let session_date = session.start_time.date_naive();
                 if session_date >= week_start && session_date < week_start + Duration::days(7) {
                     let day_offset = (session_date - week_start).num_days();
-                    if day_offset >= 0 && day_offset < 7 {
+                    if (0..7).contains(&day_offset) {
                         daily[day_offset as usize].1.push(session);
                     }
                 }
@@ -1011,7 +1009,7 @@ pub fn draw_sessions_timeline(app: &App, f: &mut Frame, area: Rect, view_mode: &
                 (NaiveDate::from_ymd_opt(date.year() + 1, 1, 1).unwrap() - month_start).num_days()
             } else {
                 (NaiveDate::from_ymd_opt(date.year(), date.month() + 1, 1).unwrap() - month_start).num_days()
-            } as i64;
+            };
             let mut daily: Vec<(i64, Vec<&crate::models::session::Session>)> = (0..days_in_month)
                 .map(|d| (d, vec![]))
                 .collect();
@@ -1040,7 +1038,7 @@ pub fn draw_sessions_timeline(app: &App, f: &mut Frame, area: Rect, view_mode: &
 
     let mut bar_line = vec![];
 
-    for (_, session_pair) in sessions_data.iter().enumerate() {
+    for session_pair in sessions_data.iter() {
         let sessions = &session_pair.1;
         // Get dominant category color for this period
         let color = if sessions.is_empty() {
@@ -1252,16 +1250,21 @@ pub fn draw_afk(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(afk_paragraph, area);
 }
 
+pub struct BreakdownConfig<'a> {
+    pub title: &'a str,
+    pub data: &'a [(String, i64)],
+    pub color: Color,
+    pub is_category: bool,
+    pub style: Style,
+    pub scroll_position: usize,
+}
+
 pub fn draw_breakdown_section_with_style(
     f: &mut Frame,
     area: Rect,
-    title: &str,
-    data: &[(String, i64)],
-    color: Color,
-    is_category: bool,
-    style: Style,
-    scroll_position: usize,
+    config: BreakdownConfig<'_>,
 ) {
+    let BreakdownConfig { title, data, color, is_category, style, scroll_position } = config;
     let max_items = (area.height.saturating_sub(3) as usize).max(3);
     let mut items: Vec<ListItem> = Vec::new();
 

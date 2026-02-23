@@ -155,13 +155,15 @@ Why? On macOS/Windows, if the tracking runs in the dashboard window, it can't se
     - Screen & System Audio Settings
     - Input Monitoring
   - **Windows**: Works out of the box
-  - **Linux**: Needs a desktop environment (GNOME, KDE, etc.)
+  - **Linux**: Needs a desktop environment (GNOME, KDE, Hyprland, etc.)
 
   **Note**: On macOS/Windows, the daemon runs in the background without needing permissions. The **Terminal application** itself needs the permissions listed above to monitor your system properly.
 
 ## Special Notes
 
-**Wayland users (Linux)**: Install the [Window Calls extension](https://extensions.gnome.org/extension/4724/window-calls/) for GNOME to track windows properly.
+**Wayland users (Linux)**:
+- **Hyprland**: Window tracking works out of the box via `hyprctl` (no extra setup needed).
+- **GNOME**: Install the [Window Calls extension](https://extensions.gnome.org/extension/4724/window-calls/) for window tracking.
 
 **First time running**: The app creates secure database credentials automatically. You don't need to configure anything.
 
@@ -281,7 +283,12 @@ The app uses port **52851** for PostgreSQL. If another service is using that por
 
 ### Wayland (Linux)
 
-If windows aren't being tracked on Wayland, install the [Window Calls GNOME extension](https://extensions.gnome.org/extension/4724/window-calls/).
+- **Hyprland**: Window tracking uses `hyprctl` automatically. Make sure `hyprctl` is in your PATH (it is by default on Hyprland).
+- **GNOME**: Install the [Window Calls GNOME extension](https://extensions.gnome.org/extension/4724/window-calls/).
+- **Other compositors**: May fall back to X11 detection via XWayland.
+- **Ptyxis terminal (GNOME)**: Ptyxis runs in a containerized environment and may not propagate Wayland environment variables (`WAYLAND_DISPLAY`, `XDG_SESSION_TYPE`), which can cause window detection to fail. Workarounds:
+  - Use **tmux** inside Ptyxis — running the app inside a tmux session restores proper environment detection.
+  - Use the **default Ubuntu terminal** (GNOME Terminal) instead, which propagates environment variables correctly.
 
 ### macOS permissions
 

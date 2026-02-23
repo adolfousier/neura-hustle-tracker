@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.4.19 (2026-02-23)
+
+- **Hyprland Window Detection**: Added native window tracking support for Hyprland compositor
+  - Detects Hyprland via `HYPRLAND_INSTANCE_SIGNATURE` environment variable
+  - Uses `hyprctl activewindow -j` to get active window class and title
+  - Works out of the box on Hyprland — no extensions or extra setup required
+  - Graceful fallback: if `hyprctl` fails, falls through to GNOME D-Bus and X11 detection
+  - Added to both UI tracker and background daemon tracker
+  - Hyprland `class` field maps to `wm_class`, so existing app name normalization works as-is
+
+- **Wayland Detection Fix**: Improved Wayland session detection with socket fallback
+  - Added fallback check for Wayland socket at `$XDG_RUNTIME_DIR/wayland-0` when environment variables are missing
+  - Fixes detection on terminals like Ptyxis that don't propagate `WAYLAND_DISPLAY`/`XDG_SESSION_TYPE`
+
+- **Test Coverage**: Added 20+ unit tests for window detection logic
+  - Tests for Hyprland JSON parsing, empty/malformed responses, and graceful error handling
+  - Tests for Wayland/Hyprland detection and fallback behavior
+  - Organized in dedicated test modules (`monitor_tests.rs`)
+
+- **Code Quality**: Applied clippy suggestions across multiple modules
+  - Collapsed nested `if` statements into `if let` chains
+  - Replaced `map_or` with `is_some_and` for clarity
+  - Minor code style improvements in docker config, daemon, and parser modules
+
 ## v0.4.18 (2026-02-12)
 
 - **Self-Contained Binary**: Pre-built binaries now auto-start PostgreSQL via Docker Compose

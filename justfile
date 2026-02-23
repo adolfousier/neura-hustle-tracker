@@ -92,26 +92,33 @@ db-down:
 check-wayland:
     #!/usr/bin/env bash
     if [ "$(uname)" != "Darwin" ] && [ "$(uname)" != "MINGW64_NT-10.0" ]; then
-        if [ "$XDG_SESSION_TYPE" = "wayland" ] || [ -n "$WAYLAND_DISPLAY" ]; then
+        if [ "$XDG_SESSION_TYPE" = "wayland" ] || [ -n "$WAYLAND_DISPLAY" ] || [ -e "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wayland-0" ]; then
             echo "Wayland session detected!"
-            echo "Checking for Window Calls GNOME extension..."
-            if ! gnome-extensions list 2>/dev/null | grep -q "window-calls"; then
-                echo ""
-                echo "⚠️  WAYLAND SETUP REQUIRED ⚠️"
-                echo ""
-                echo "The 'Window Calls' GNOME extension is required for Wayland support."
-                echo ""
-                echo "Install it by visiting:"
-                echo "  https://extensions.gnome.org/extension/4724/window-calls/"
-                echo ""
-                echo "Or install Extension Manager:"
-                echo "  sudo apt install gnome-shell-extension-manager"
-                echo ""
-                echo "After installing, re-run 'just run'"
-                echo ""
-                exit 1
+            # Hyprland has built-in support via hyprctl — no extension needed
+            if [ -n "$HYPRLAND_INSTANCE_SIGNATURE" ]; then
+                echo "✓ Hyprland detected - using hyprctl for window tracking."
             else
-                echo "✓ Window Calls extension found!"
+                echo "Checking for Window Calls GNOME extension..."
+                if ! gnome-extensions list 2>/dev/null | grep -q "window-calls" && \
+                   ! ls -d ~/.local/share/gnome-shell/extensions/window-calls* >/dev/null 2>&1 && \
+                   ! ls -d /usr/share/gnome-shell/extensions/window-calls* >/dev/null 2>&1; then
+                    echo ""
+                    echo "⚠️  WAYLAND SETUP REQUIRED ⚠️"
+                    echo ""
+                    echo "The 'Window Calls' GNOME extension is required for Wayland support."
+                    echo ""
+                    echo "Install it by visiting:"
+                    echo "  https://extensions.gnome.org/extension/4724/window-calls/"
+                    echo ""
+                    echo "Or install Extension Manager:"
+                    echo "  sudo apt install gnome-shell-extension-manager"
+                    echo ""
+                    echo "After installing, re-run 'just run'"
+                    echo ""
+                    exit 1
+                else
+                    echo "✓ Window Calls extension found!"
+                fi
             fi
         else
             echo "X11 session detected - no additional setup needed."

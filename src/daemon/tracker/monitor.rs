@@ -16,6 +16,14 @@ struct WindowInfo {
     focus: bool,
 }
 
+#[derive(serde::Deserialize, Debug)]
+struct HyprlandWindow {
+    #[serde(default)]
+    class: String,
+    #[serde(default)]
+    title: String,
+}
+
 #[cfg(target_os = "linux")]
 #[derive(Debug)]
 struct ProcessInfo {
@@ -34,6 +42,7 @@ struct EditorInfo {
 
 pub struct AppMonitor {
     use_wayland: bool,
+    use_hyprland: bool,
 }
 
 impl Default for AppMonitor {
@@ -55,12 +64,17 @@ impl AppMonitor {
         log::info!("=== PLATFORM: Linux ===");
 
         let use_wayland = Self::is_wayland();
+        let use_hyprland = Self::is_hyprland();
 
         // Platform-specific window tracking method
         #[cfg(target_os = "linux")]
         {
             if use_wayland {
-                log::info!("Session type: Wayland - using D-Bus for window tracking");
+                if use_hyprland {
+                    log::info!("Session type: Wayland (Hyprland) - using hyprctl for window tracking");
+                } else {
+                    log::info!("Session type: Wayland - using D-Bus for window tracking");
+                }
             } else {
                 log::info!("Session type: X11 - using X11 APIs for window tracking");
             }
@@ -72,21 +86,59 @@ impl AppMonitor {
         #[cfg(target_os = "windows")]
         log::info!("Using Win32 APIs for window tracking");
 
-        Self { use_wayland }
+        Self { use_wayland, use_hyprland }
     }
 
 
     fn is_wayland() -> bool {
         #[cfg(target_os = "linux")]
         {
-            env::var("WAYLAND_DISPLAY").is_ok() ||
-            env::var("XDG_SESSION_TYPE").map(|s| s == "wayland").unwrap_or(false)
+            if env::var("WAYLAND_DISPLAY").is_ok() {
+                return true;
+            }
+            if env::var("XDG_SESSION_TYPE").map(|s| s == "wayland").unwrap_or(false) {
+                return true;
+            }
+            // Fallback: check for Wayland socket when env vars aren't propagated
+            if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+                let wayland_path = std::path::Path::new(&runtime_dir).join("wayland-0");
+                if wayland_path.exists() {
+                    log::info!("Wayland detected via socket (env vars not set)");
+                    return true;
+                }
+            }
+            false
         }
 
         #[cfg(not(target_os = "linux"))]
         {
             false
         }
+    }
+
+    fn is_hyprland() -> bool {
+        env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
+    }
+
+    async fn get_active_window_hyprland() -> Result<(String, String)> {
+        use std::process::Command;
+
+        let output = Command::new("hyprctl")
+            .args(["activewindow", "-j"])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!("hyprctl activewindow failed"));
+        }
+
+        let json_str = String::from_utf8_lossy(&output.stdout);
+        let window: HyprlandWindow = serde_json::from_str(&json_str)?;
+
+        if window.class.is_empty() {
+            return Err(anyhow::anyhow!("No focused window (Hyprland)"));
+        }
+
+        Ok((window.class, window.title))
     }
 
     #[cfg(target_os = "linux")]
@@ -111,11 +163,10 @@ impl AppMonitor {
                     info.has_tmux = true;
                     // Try to get session name from cmdline
                     for arg in cmdline.split('\0').skip(1) {
-                        if arg.starts_with("-t") || arg.starts_with("-s") {
-                            if let Some(session) = arg.split('=').nth(1).or_else(|| arg.split(' ').nth(1)) {
+                        if (arg.starts_with("-t") || arg.starts_with("-s"))
+                            && let Some(session) = arg.split('=').nth(1).or_else(|| arg.split(' ').nth(1)) {
                                 info.tmux_session = Some(session.to_string());
                             }
-                        }
                     }
                 }
 
@@ -151,8 +202,8 @@ impl AppMonitor {
                 "".to_string()
             };
             let cmd = format!("tmux list-windows {} -F \"#{{window_name}}:#{{window_active}}\"", session_arg);
-            if let Ok(output) = std::process::Command::new("sh").arg("-c").arg(&cmd).output() {
-                if output.status.success() {
+            if let Ok(output) = std::process::Command::new("sh").arg("-c").arg(&cmd).output()
+                && output.status.success() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     for line in stdout.lines() {
                         if let Some(colon) = line.rfind(':') {
@@ -165,7 +216,6 @@ impl AppMonitor {
                         }
                     }
                 }
-            }
         }
 
         Some(info)
@@ -293,7 +343,7 @@ impl AppMonitor {
                     log::info!("Main path terminal title after directory extraction: '{}'", enhanced);
 
                     if active_window.process_id != 0 {
-                        let pid = active_window.process_id as u64;
+                        let pid = active_window.process_id;
                         enhanced = {
                             #[cfg(target_os = "windows")]
                             { super::windows_inspection::enhance_windows_title(&enhanced, pid) }
@@ -327,13 +377,24 @@ impl AppMonitor {
             Err(_) => {
                 // Fallbacks based on platform/session type
                 if self.use_wayland {
-                    // Try GNOME extension for Wayland
-                    match Self::get_active_window_wayland().await {
-                        Ok((wm_class, title)) => {
-                            let app_name = self.fix_app_name(wm_class);
-                            return Ok((app_name, Some(title)));
+                    // Try Hyprland first if detected
+                    if self.use_hyprland {
+                        match Self::get_active_window_hyprland().await {
+                            Ok((wm_class, title)) => {
+                                let app_name = self.fix_app_name(wm_class);
+                                log::info!("Detected app (Hyprland): {}", app_name);
+                                return Ok((app_name, Some(title)));
+                            }
+                            Err(e) => {
+                                log::debug!("Hyprland window detection failed: {}, trying GNOME D-Bus", e);
+                            }
                         }
-                        Err(_) => {}
+                    }
+
+                    // Try GNOME extension for Wayland
+                    if let Ok((wm_class, title)) = Self::get_active_window_wayland().await {
+                        let app_name = self.fix_app_name(wm_class);
+                        return Ok((app_name, Some(title)));
                     }
                 } else {
                     // Try GNOME extension for Wayland
@@ -342,12 +403,11 @@ impl AppMonitor {
                             log::info!("Wayland fallback title: '{}'", title);
                             let app_name = self.fix_app_name(wm_class);
                             // Extract directory from prompt if it looks like a shell prompt
-                            if Self::is_terminal_app(&app_name) && title.contains("@") && title.contains(": ") {
-                                if let Some(dir) = title.split(": ").last() {
+                            if Self::is_terminal_app(&app_name) && title.contains("@") && title.contains(": ")
+                                && let Some(dir) = title.split(": ").last() {
                                     title = dir.to_string();
                                     log::info!("Wayland fallback title after extraction: '{}'", title);
                                 }
-                            }
                             return Ok((app_name, Some(title)));
                         }
                         Err(_) => {
@@ -575,7 +635,7 @@ impl AppMonitor {
         #[cfg(target_os = "linux")]
         let normalized = {
             if app_lower.contains('.') {
-                app_lower.split('.').last().unwrap_or(&app_lower).to_string()
+                app_lower.split('.').next_back().unwrap_or(&app_lower).to_string()
             } else if app_lower.contains('_') {
                 app_lower.split('_').next().unwrap_or(&app_lower).to_string()
             } else {
@@ -659,6 +719,150 @@ mod tests {
             }
             Err(_) => {
                 // Test passes if method exists and can be called, even if it fails due to no active window
+            }
+        }
+    }
+
+    #[test]
+    fn test_hyprland_window_deserialize_full() {
+        let json = r#"{
+            "class": "firefox",
+            "title": "GitHub - Mozilla Firefox",
+            "address": "0x123",
+            "workspace": {"id": 1, "name": "1"},
+            "pid": 12345,
+            "focused": true
+        }"#;
+        let window: HyprlandWindow = serde_json::from_str(json).unwrap();
+        assert_eq!(window.class, "firefox");
+        assert_eq!(window.title, "GitHub - Mozilla Firefox");
+    }
+
+    #[test]
+    fn test_hyprland_window_deserialize_empty() {
+        // hyprctl returns {} when no window is focused
+        let json = "{}";
+        let window: HyprlandWindow = serde_json::from_str(json).unwrap();
+        assert_eq!(window.class, "");
+        assert_eq!(window.title, "");
+    }
+
+    #[test]
+    fn test_hyprland_window_deserialize_minimal() {
+        let json = r#"{"class": "kitty", "title": "~"}"#;
+        let window: HyprlandWindow = serde_json::from_str(json).unwrap();
+        assert_eq!(window.class, "kitty");
+        assert_eq!(window.title, "~");
+    }
+
+    #[test]
+    fn test_is_hyprland_with_env() {
+        let original = env::var("HYPRLAND_INSTANCE_SIGNATURE").ok();
+        // SAFETY: test-only env manipulation, tests run single-threaded with -- --test-threads=1
+        unsafe { env::set_var("HYPRLAND_INSTANCE_SIGNATURE", "test_signature"); }
+        assert!(AppMonitor::is_hyprland());
+        unsafe {
+            if let Some(val) = original {
+                env::set_var("HYPRLAND_INSTANCE_SIGNATURE", val);
+            } else {
+                env::remove_var("HYPRLAND_INSTANCE_SIGNATURE");
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_hyprland_without_env() {
+        let original = env::var("HYPRLAND_INSTANCE_SIGNATURE").ok();
+        // SAFETY: test-only env manipulation
+        unsafe { env::remove_var("HYPRLAND_INSTANCE_SIGNATURE"); }
+        assert!(!AppMonitor::is_hyprland());
+        unsafe {
+            if let Some(val) = original {
+                env::set_var("HYPRLAND_INSTANCE_SIGNATURE", val);
+            }
+        }
+    }
+
+    #[test]
+    fn test_fix_app_name_hyprland_classes() {
+        let monitor = AppMonitor { use_wayland: true, use_hyprland: true };
+        assert_eq!(monitor.fix_app_name("firefox".to_string()), "firefox");
+        assert_eq!(monitor.fix_app_name("chrome".to_string()), "chrome");
+        assert_eq!(monitor.fix_app_name("Slack".to_string()), "slack");
+        assert_eq!(monitor.fix_app_name("discord".to_string()), "discord");
+        assert_eq!(monitor.fix_app_name("spotify".to_string()), "spotify");
+    }
+
+    #[test]
+    fn test_hyprland_empty_class_is_no_window() {
+        // When hyprctl returns empty class, it means no focused window
+        let json = r#"{"class": "", "title": "something"}"#;
+        let window: HyprlandWindow = serde_json::from_str(json).unwrap();
+        assert!(window.class.is_empty(), "Empty class should indicate no focused window");
+    }
+
+    #[test]
+    fn test_is_wayland_via_socket_fallback() {
+        let original_wayland = env::var("WAYLAND_DISPLAY").ok();
+        let original_session = env::var("XDG_SESSION_TYPE").ok();
+        let runtime_dir = env::var("XDG_RUNTIME_DIR").ok();
+
+        // SAFETY: test-only env manipulation
+        unsafe {
+            env::remove_var("WAYLAND_DISPLAY");
+            env::remove_var("XDG_SESSION_TYPE");
+        }
+
+        if let Some(ref dir) = runtime_dir {
+            let wayland_socket = std::path::Path::new(dir).join("wayland-0");
+            if wayland_socket.exists() {
+                assert!(AppMonitor::is_wayland(), "Should detect Wayland via socket fallback");
+            } else {
+                assert!(!AppMonitor::is_wayland(), "Should not detect Wayland without socket or env vars");
+            }
+        }
+
+        unsafe {
+            if let Some(val) = original_wayland {
+                env::set_var("WAYLAND_DISPLAY", val);
+            }
+            if let Some(val) = original_session {
+                env::set_var("XDG_SESSION_TYPE", val);
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_via_env_var() {
+        let original = env::var("WAYLAND_DISPLAY").ok();
+        unsafe { env::set_var("WAYLAND_DISPLAY", "wayland-0"); }
+        assert!(AppMonitor::is_wayland());
+        unsafe {
+            if let Some(val) = original {
+                env::set_var("WAYLAND_DISPLAY", val);
+            } else {
+                env::remove_var("WAYLAND_DISPLAY");
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_via_session_type() {
+        let original_wayland = env::var("WAYLAND_DISPLAY").ok();
+        let original_session = env::var("XDG_SESSION_TYPE").ok();
+        unsafe {
+            env::remove_var("WAYLAND_DISPLAY");
+            env::set_var("XDG_SESSION_TYPE", "wayland");
+        }
+        assert!(AppMonitor::is_wayland());
+        unsafe {
+            if let Some(val) = original_wayland {
+                env::set_var("WAYLAND_DISPLAY", val);
+            }
+            if let Some(val) = original_session {
+                env::set_var("XDG_SESSION_TYPE", val);
+            } else {
+                env::remove_var("XDG_SESSION_TYPE");
             }
         }
     }

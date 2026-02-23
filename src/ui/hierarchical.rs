@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 use crate::models::session::Session;
 
+/// (duration, display_name, category)
+type SubEntryData = (i64, String, Option<String>);
+type AppMap = BTreeMap<String, BTreeMap<String, SubEntryData>>;
+
 #[derive(Clone)]
 pub struct HierarchicalDisplayItem {
     pub display_name: String,
@@ -42,7 +46,7 @@ fn extract_project_name(path: &str) -> Option<String> {
         let part_lower = part.to_lowercase();
         if !part.is_empty() && *part != "." && *part != ".." && !skip_dirs.contains(&part_lower.as_str()) {
             // Additional heuristics: prefer directories that look like projects
-            if part.chars().next().map_or(false, |c| c.is_alphabetic()) && part.len() >= 2 {
+            if part.chars().next().is_some_and(|c| c.is_alphabetic()) && part.len() >= 2 {
                 return Some(part.to_string());
             }
         }
@@ -61,7 +65,7 @@ fn extract_project_name(path: &str) -> Option<String> {
 /// Format: App entries with sub-entries indented with "  └─ "
 pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDisplayItem> {
     // Group sessions by app, then by sub-entry unique ID, storing (duration, display_name, category)
-    let mut app_map: BTreeMap<String, BTreeMap<String, (i64, String, Option<String>)>> = BTreeMap::new();
+    let mut app_map: AppMap = BTreeMap::new();
 
     for session in sessions {
         // Skip AFK sessions
@@ -93,7 +97,7 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDispla
             (app_name.clone(), app_name.clone(), None)
         };
 
-        let app_sessions = app_map.entry(app_name.clone()).or_insert_with(BTreeMap::new);
+        let app_sessions = app_map.entry(app_name.clone()).or_default();
 
         // If sub_entry_unique_id is the same as app_name, it's a general entry
         if sub_entry_unique_id == app_name {
@@ -131,7 +135,7 @@ pub fn create_hierarchical_usage(sessions: &[Session]) -> Vec<HierarchicalDispla
 
         // Add sub-entries (top 2 by duration)
         if let Some(sessions) = app_map.get(&app_name) {
-            let mut session_list: Vec<(String, (i64, String, Option<String>))> = sessions.iter()
+            let mut session_list: Vec<(String, SubEntryData)> = sessions.iter()
                 .map(|(sub_id, (dur, display, cat))| (sub_id.clone(), (*dur, display.clone(), cat.clone())))
                 .collect();
             session_list.sort_by(|a, b| b.1.0.cmp(&a.1.0));
@@ -170,7 +174,7 @@ pub fn create_browser_breakdown(sessions: &[Session]) -> Vec<(String, i64)> {
             // Otherwise, don't create a hierarchy - just skip it
             if let Some(url) = &session.browser_url {
                 // We have a recognized service (YouTube, WhatsApp, LinkedIn, etc.)
-                let service_map = browser_map.entry(url.clone()).or_insert_with(BTreeMap::new);
+                let service_map = browser_map.entry(url.clone()).or_default();
                 *service_map.entry(page_title.clone()).or_insert(0) += session.duration;
             }
             // If no browser_url, we don't include it in breakdown (it's already in regular app stats)
@@ -192,10 +196,10 @@ pub fn create_project_breakdown(sessions: &[Session]) -> Vec<(String, i64)> {
         }
 
         if let (Some(project), Some(dir)) = (&session.terminal_project_name, &session.terminal_directory) {
-            let dir_map = project_dir_map.entry(project.clone()).or_insert_with(BTreeMap::new);
+            let dir_map = project_dir_map.entry(project.clone()).or_default();
             *dir_map.entry(dir.clone()).or_insert(0) += session.duration;
         } else if let Some(project) = &session.ide_project_name {
-            let dir_map = project_dir_map.entry(project.clone()).or_insert_with(BTreeMap::new);
+            let dir_map = project_dir_map.entry(project.clone()).or_default();
             *dir_map.entry("(IDE)".to_string()).or_insert(0) += session.duration;
         }
     }
@@ -228,7 +232,7 @@ pub fn create_terminal_breakdown(sessions: &[Session]) -> Vec<(String, i64)> {
         };
 
         // Add the session to the project map
-        let dir_map = terminal_project_map.entry(project_name).or_insert_with(BTreeMap::new);
+        let dir_map = terminal_project_map.entry(project_name).or_default();
 
         // Use directory as sub-entry, or tmux info if available
         let sub_entry = if let Some(tmux_window) = &session.tmux_window_name {
@@ -262,7 +266,7 @@ pub fn create_file_breakdown(sessions: &[Session]) -> Vec<(String, String, i64)>
 
         if let (Some(filename), Some(language)) = (&session.editor_filename, &session.editor_language) {
             let project = session.editor_project_path.clone().unwrap_or_else(|| "Other".to_string());
-            let file_map = file_project_map.entry(project).or_insert_with(BTreeMap::new);
+            let file_map = file_project_map.entry(project).or_default();
             *file_map.entry((filename.clone(), language.clone())).or_insert(0) += session.duration;
         }
     }

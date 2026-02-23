@@ -174,8 +174,8 @@ impl Daemon {
             }
 
             // Auto save every hour
-            if last_save.elapsed() >= save_interval {
-                if let Some(session) = &mut self.current_session {
+            if last_save.elapsed() >= save_interval
+                && let Some(session) = &mut self.current_session {
                     session.duration = Local::now().signed_duration_since(session.start_time).num_seconds();
                     if let Err(e) = self.database.apply_renames_and_categories(session).await {
                         log::warn!("Failed to apply renames and categories on auto-save: {}", e);
@@ -187,7 +187,6 @@ impl Daemon {
                         log::info!("Auto-saved session: {} for {}s", session.app_name, session.duration);
                     }
                 }
-            }
 
             // Poll every 100ms for real-time tracking
             time::sleep(Duration::from_millis(100)).await;

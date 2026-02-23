@@ -28,18 +28,16 @@ impl DockerManager {
         let output = Command::new("docker")
             .args(["compose", "version"])
             .output();
-        if let Ok(o) = output {
-            if o.status.success() {
+        if let Ok(o) = output
+            && o.status.success() {
                 return Ok(("docker".to_string(), vec!["compose".to_string()]));
             }
-        }
         // Try standalone docker-compose
         let output = Command::new("docker-compose").arg("version").output();
-        if let Ok(o) = output {
-            if o.status.success() {
+        if let Ok(o) = output
+            && o.status.success() {
                 return Ok(("docker-compose".to_string(), vec![]));
             }
-        }
         bail!(
             "'docker compose' plugin is not available.\n\
              Install it: sudo apt-get install docker-compose-plugin\n\
