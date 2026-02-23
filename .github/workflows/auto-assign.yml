@@ -1,0 +1,86 @@
+name: Auto-assign issues & discussions
+
+on:
+  issues:
+    types: [opened]
+  discussion:
+    types: [created]
+
+jobs:
+  assign-issue:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              assignees: [context.repo.owner]
+            });
+
+  assign-discussion:
+    if: github.event_name == 'discussion'
+    runs-on: ubuntu-latest
+    permissions:
+      discussions: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            // Add a comment to claim the discussion
+            await github.graphql(`
+              mutation($discussionId: ID!, $body: String!) {
+                addDiscussionComment(input: {discussionId: $discussionId, body: $body}) {
+                  comment { id }
+                }
+              }
+            `, {
+              discussionId: context.payload.discussion.node_id,
+              body: `👋 Thanks for starting this discussion! I'm on it.\n\nCC @${context.repo.owner}`
+            });
+
+            // Add a label to track owner involvement
+            try {
+              await github.graphql(`
+                mutation($labelableId: ID!, $labelIds: [ID!]!) {
+                  addLabelsToLabelable(input: {labelableId: $labelableId, labelIds: $labelIds}) {
+                    labelable { ... on Discussion { id } }
+                  }
+                }
+              `, {
+                labelableId: context.payload.discussion.node_id,
+                labelIds: [await getOrCreateLabel()]
+              });
+            } catch (e) {
+              core.info(`Label step skipped: ${e.message}`);
+            }
+
+            async function getOrCreateLabel() {
+              const { repository } = await github.graphql(`
+                query($owner: String!, $name: String!) {
+                  repository(owner: $owner, name: $name) {
+                    label(name: "owner-review") { id }
+                  }
+                }
+              `, { owner: context.repo.owner, name: context.repo.repo });
+
+              if (repository.label) return repository.label.id;
+
+              const { createLabel } = await github.graphql(`
+                mutation($repositoryId: ID!, $name: String!, $color: String!) {
+                  createLabel(input: {repositoryId: $repositoryId, name: $name, color: $color}) {
+                    label { id }
+                  }
+                }
+              `, {
+                repositoryId: context.payload.repository.node_id,
+                name: "owner-review",
+                color: "0E8A16"
+              });
+              return createLabel.label.id;
+            }
