@@ -4,7 +4,7 @@
 [![Just](https://img.shields.io/badge/Just-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/casey/just)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-%23000000.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 
-[![Hustle Tracker](https://img.shields.io/badge/Hustle%20Tracker-7f56da)](https://github.com/adolfousier/hustle-tracker) [![crates.io](https://img.shields.io/crates/v/hustle_tracker.svg)](https://crates.io/crates/hustle_tracker)
+[![Hustle Tracker](https://img.shields.io/badge/Hustle%20Tracker-7f56da)](https://github.com/adolfousier/hustle-tracker) [![crates.io](https://img.shields.io/crates/v/hustle-tracker.svg)](https://crates.io/crates/hustle-tracker)
 
 # Hustle Tracker BETA
 
