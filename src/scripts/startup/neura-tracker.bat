@@ -1,5 +1,5 @@
 @echo off
-for /f "tokens=*" %%i in ('dir /b /ad /s "%USERPROFILE%" ^| findstr /i "neura-hustle-tracker"') do (
+for /f "tokens=*" %%i in ('dir /b /ad /s "%USERPROFILE%" ^| findstr /i "hustle-tracker"') do (
   cd /d "%%i"
   goto :found
 )

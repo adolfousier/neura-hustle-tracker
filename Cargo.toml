@@ -1,14 +1,30 @@
 [package]
-name = "neura_hustle_tracker"
-version = "0.4.19"
+name = "hustle_tracker"
+version = "0.5.0"
 edition = "2024"
+authors = ["Adolfo Usier <adolfousier@gmail.com>"]
+description = "Terminal-based application usage tracker — see where your time goes during work sessions"
+license = "MIT"
+repository = "https://github.com/adolfousier/hustle-tracker"
+homepage = "https://github.com/adolfousier/hustle-tracker"
+readme = "README.md"
+keywords = ["time-tracking", "productivity", "tui", "ratatui", "terminal"]
+categories = ["command-line-utilities"]
+exclude = [
+    "src/screenshots/*",
+    ".github/*",
+    "*.log",
+    ".env",
+    "justfile",
+    "docker-compose*.yml",
+]
 
 [[bin]]
-name = "neura_hustle_tracker"
+name = "hustle_tracker"
 path = "src/main.rs"
 
 [[bin]]
-name = "neura_hustle_daemon"
+name = "hustle_daemon"
 path = "src/daemon_main.rs"
 
 [dependencies]

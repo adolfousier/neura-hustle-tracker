@@ -4,9 +4,9 @@
 [![Just](https://img.shields.io/badge/Just-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/casey/just)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-%23000000.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org)
 
-[![Neura Hustle Tracker](https://img.shields.io/badge/Neura%20Hustle%20Tracker-7f56da)](https://meetneura.ai) [![Powered by Neura AI](https://img.shields.io/badge/Powered%20by-Neura%20AI-7f56da)](https://meetneura.ai)
+[![Hustle Tracker](https://img.shields.io/badge/Hustle%20Tracker-7f56da)](https://github.com/adolfousier/hustle-tracker) [![crates.io](https://img.shields.io/crates/v/hustle_tracker.svg)](https://crates.io/crates/hustle_tracker)
 
-# Neura Hustle Tracker BETA
+# Hustle Tracker BETA
 
 **Track what apps you use and how long you spend on them.**
 
@@ -17,22 +17,22 @@ This app runs in your terminal and shows you exactly where your time goes during
 
 ## Download Pre-Built Binaries (Easiest!)
 
-**No Rust installation needed!** Download ready-to-use binaries for your platform from [GitHub Releases](https://github.com/adolfousier/neura-hustle-tracker/releases):
+**No Rust installation needed!** Download ready-to-use binaries for your platform from [GitHub Releases](https://github.com/adolfousier/hustle-tracker/releases):
 
-- **Linux**: [neura_hustle_tracker-linux-x86_64](https://github.com/adolfousier/neura-hustle-tracker/releases)
-- **macOS (Intel)**: [neura_hustle_tracker-macos-x86_64](https://github.com/adolfousier/neura-hustle-tracker/releases)
-- **macOS (Apple Silicon)**: [neura_hustle_tracker-macos-aarch64](https://github.com/adolfousier/neura-hustle-tracker/releases)
-- **Windows**: [neura_hustle_tracker-windows-x86_64.exe](https://github.com/adolfousier/neura-hustle-tracker/releases)
+- **Linux**: [hustle_tracker-linux-x86_64](https://github.com/adolfousier/hustle-tracker/releases)
+- **macOS (Intel)**: [hustle_tracker-macos-x86_64](https://github.com/adolfousier/hustle-tracker/releases)
+- **macOS (Apple Silicon)**: [hustle_tracker-macos-aarch64](https://github.com/adolfousier/hustle-tracker/releases)
+- **Windows**: [hustle_tracker-windows-x86_64.exe](https://github.com/adolfousier/hustle-tracker/releases)
 
 **Prerequisites**: [Docker](https://docs.docker.com/get-docker/) must be installed and running.
 
-Download, make executable on Linux/macOS (`chmod +x neura_hustle_tracker-*`), and run. The binary will automatically:
+Download, make executable on Linux/macOS (`chmod +x hustle_tracker-*`), and run. The binary will automatically:
 1. Generate database credentials (`.env` file)
 2. Start PostgreSQL via Docker Compose
 3. Run database migrations
 4. Launch the app
 
-**Note**: On macOS/Windows, you'll also need the daemon binary (`neura_hustle_daemon`) running in the background.
+**Note**: On macOS/Windows, you'll also need the daemon binary (`hustle_daemon`) running in the background.
 
 ## What Does This Do?
 
@@ -48,7 +48,7 @@ Download, make executable on Linux/macOS (`chmod +x neura_hustle_tracker-*`), an
 Copy and paste this into your terminal:
 
 ```bash
-sudo apt update && sudo apt install -y docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && cargo install just && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && just run
+sudo apt update && sudo apt install -y docker.io curl git openssl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && cargo install just && git clone https://github.com/adolfousier/hustle-tracker.git && cd hustle-tracker && just run
 ```
 
 That's it! The app will start tracking automatically.
@@ -59,7 +59,7 @@ That's it! The app will start tracking automatically.
 2. Then paste this into Terminal:
 
 ```bash
-brew install git rustup-init && rustup-init -y && source ~/.cargo/env && cargo install just && git clone https://github.com/adolfousier/neura-hustle-tracker.git && cd neura-hustle-tracker && just daemon-start
+brew install git rustup-init && rustup-init -y && source ~/.cargo/env && cargo install just && git clone https://github.com/adolfousier/hustle-tracker.git && cd hustle-tracker && just daemon-start
 ```
 
 3. View your stats anytime: `just view`
@@ -71,7 +71,7 @@ brew install git rustup-init && rustup-init -y && source ~/.cargo/env && cargo i
 3. Run this:
 
 ```powershell
-powershell -Command "iwr -useb https://raw.githubusercontent.com/adolfousier/neura-hustle-tracker/main/src/scripts/windows_build/windows-install.ps1 | iex"
+powershell -Command "iwr -useb https://raw.githubusercontent.com/adolfousier/hustle-tracker/main/src/scripts/windows_build/windows-install.ps1 | iex"
 ```
 
 4. View your stats anytime: `just view`
@@ -81,8 +81,8 @@ powershell -Command "iwr -useb https://raw.githubusercontent.com/adolfousier/neu
 If you already have the prerequisites installed:
 
 ```bash
-git clone https://github.com/adolfousier/neura-hustle-tracker
-cd neura-hustle-tracker
+git clone https://github.com/adolfousier/hustle-tracker
+cd hustle-tracker
 cargo install just
 just run
 ```
@@ -175,7 +175,7 @@ Want the app to start automatically when you log in? The daemon binary runs in t
 
 ```bash
 mkdir -p ~/.local/bin ~/.config/autostart
-cp target/release/neura_hustle_daemon ~/.local/bin/
+cp target/release/hustle_daemon ~/.local/bin/
 cp src/scripts/startup/neura-tracker.desktop ~/.config/autostart/
 ```
 
@@ -185,7 +185,7 @@ If your `~/.local/bin` is not in `$PATH`, edit the `.desktop` file and set the f
 
 ```bash
 mkdir -p ~/.local/bin ~/.config/systemd/user
-cp target/release/neura_hustle_daemon ~/.local/bin/
+cp target/release/hustle_daemon ~/.local/bin/
 cp src/scripts/startup/neura-tracker.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now neura-tracker
@@ -194,7 +194,7 @@ systemctl --user enable --now neura-tracker
 **macOS:**
 
 ```bash
-cp target/release/neura_hustle_daemon /usr/local/bin/
+cp target/release/hustle_daemon /usr/local/bin/
 mkdir -p ~/Library/LaunchAgents/
 cp src/scripts/startup/neura-tracker.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/neura-tracker.plist
@@ -208,7 +208,7 @@ copy src\scripts\startup\neura-tracker.bat "%APPDATA%\Microsoft\Windows\Start Me
 
 ## Uninstall (Remove Everything)
 
-Want to remove Neura Hustle Tracker completely? It will delete the app, all tracked data, and the database volume.
+Want to remove Hustle Tracker completely? It will delete the app, all tracked data, and the database volume.
 
 **Linux/macOS:**
 
@@ -249,7 +249,7 @@ The uninstall will:
 
 ## Comparison with Other Apps
 
-| Feature | Neura Hustle Tracker | ActivityWatch | RescueTime |
+| Feature | Hustle Tracker | ActivityWatch | RescueTime |
 |---------|---------------------|---------------|------------|
 | Your data stays with you | ✅ | ✅ | ❌ |
 | Open source | ✅ | ✅ | ❌ |
@@ -271,7 +271,7 @@ If you see `Failed to connect to database` or `No such file or directory (os err
 ### Pre-built binary not working
 
 - The binary requires **Docker** to be installed - it auto-starts PostgreSQL via Docker Compose
-- On first run, the binary creates a `.env` file and `compose.yml` in `~/.local/share/neura-hustle-tracker/` (Linux), `~/Library/Application Support/neura-hustle-tracker/` (macOS), or `%APPDATA%\neura-hustle-tracker\` (Windows)
+- On first run, the binary creates a `.env` file and `compose.yml` in `~/.local/share/hustle-tracker/` (Linux), `~/Library/Application Support/hustle-tracker/` (macOS), or `%APPDATA%\hustle-tracker\` (Windows)
 - If you previously ran from source with `just run`, the binary will use the existing `.env` in your project directory
 
 ### Port conflicts
@@ -300,7 +300,7 @@ The **Terminal application** (not the daemon) needs these permissions in System 
 ### General
 
 - **App not starting?** Make sure Docker is running
-- **Database errors?** Try `just clean` then `just run` (from source), or delete `~/.local/share/neura-hustle-tracker/` and re-run the binary
+- **Database errors?** Try `just clean` then `just run` (from source), or delete `~/.local/share/hustle-tracker/` and re-run the binary
 - **Want to remove the app?** Use `just uninstall` to safely delete everything
 
 ## Contributing
@@ -313,10 +313,10 @@ See [LICENSE](LICENSE) file for details.
 
 ## Star History Chart
 
-[![Star History Chart](https://api.star-history.com/svg?repos=adolfousier/neura-hustle-tracker&type=date&legend=top-left)](https://www.star-history.com/#adolfousier/neura-hustle-tracker&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=adolfousier/hustle-tracker&type=date&legend=top-left)](https://www.star-history.com/#adolfousier/hustle-tracker&type=date&legend=top-left)
 
 ## ✨ Stay Tuned
 
 ⭐ **Star this repository to keep up with exciting updates and new releases, including powerful new features and productivity tracking capabilities!** ⭐
 
-**Built with ❤️ by the Neura community** | [Website](https://meetneura.ai) | [Issues](https://github.com/adolfousier/neura-hustle-tracker/issues)
+**Built with ❤️ by Adolfo Usier** | [Issues](https://github.com/adolfousier/hustle-tracker/issues)

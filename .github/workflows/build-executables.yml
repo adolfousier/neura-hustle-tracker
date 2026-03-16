@@ -27,18 +27,18 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build TUI (Linux)
-        run: cargo build --release --bin neura_hustle_tracker
+        run: cargo build --release --bin hustle_tracker
 
       - name: Build Daemon (Linux)
-        run: cargo build --release --bin neura_hustle_daemon
+        run: cargo build --release --bin hustle_daemon
 
       - name: Create artifacts directory
         run: mkdir -p artifacts
 
       - name: Copy binaries
         run: |
-          cp target/release/neura_hustle_tracker artifacts/neura_hustle_tracker-linux-x86_64
-          cp target/release/neura_hustle_daemon artifacts/neura_hustle_daemon-linux-x86_64
+          cp target/release/hustle_tracker artifacts/hustle_tracker-linux-x86_64
+          cp target/release/hustle_daemon artifacts/hustle_daemon-linux-x86_64
           chmod +x artifacts/*
 
       - name: Upload artifacts
@@ -62,18 +62,18 @@ jobs:
         run: rustup target add ${{ matrix.arch }}-apple-darwin
 
       - name: Build TUI (macOS-${{ matrix.arch }})
-        run: cargo build --release --target ${{ matrix.arch }}-apple-darwin --bin neura_hustle_tracker
+        run: cargo build --release --target ${{ matrix.arch }}-apple-darwin --bin hustle_tracker
 
       - name: Build Daemon (macOS-${{ matrix.arch }})
-        run: cargo build --release --target ${{ matrix.arch }}-apple-darwin --bin neura_hustle_daemon
+        run: cargo build --release --target ${{ matrix.arch }}-apple-darwin --bin hustle_daemon
 
       - name: Create artifacts directory
         run: mkdir -p artifacts
 
       - name: Copy binaries
         run: |
-          cp target/${{ matrix.arch }}-apple-darwin/release/neura_hustle_tracker artifacts/neura_hustle_tracker-macos-${{ matrix.arch }}
-          cp target/${{ matrix.arch }}-apple-darwin/release/neura_hustle_daemon artifacts/neura_hustle_daemon-macos-${{ matrix.arch }}
+          cp target/${{ matrix.arch }}-apple-darwin/release/hustle_tracker artifacts/hustle_tracker-macos-${{ matrix.arch }}
+          cp target/${{ matrix.arch }}-apple-darwin/release/hustle_daemon artifacts/hustle_daemon-macos-${{ matrix.arch }}
           chmod +x artifacts/*
 
       - name: Upload artifacts
@@ -91,10 +91,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build TUI (Windows)
-        run: cargo build --release --bin neura_hustle_tracker
+        run: cargo build --release --bin hustle_tracker
 
       - name: Build Daemon (Windows)
-        run: cargo build --release --bin neura_hustle_daemon
+        run: cargo build --release --bin hustle_daemon
 
       - name: Create artifacts directory
         shell: powershell
@@ -103,8 +103,8 @@ jobs:
       - name: Copy binaries
         shell: powershell
         run: |
-          Copy-Item target/release/neura_hustle_tracker.exe artifacts/neura_hustle_tracker-windows-x86_64.exe
-          Copy-Item target/release/neura_hustle_daemon.exe artifacts/neura_hustle_daemon-windows-x86_64.exe
+          Copy-Item target/release/hustle_tracker.exe artifacts/hustle_tracker-windows-x86_64.exe
+          Copy-Item target/release/hustle_daemon.exe artifacts/hustle_daemon-windows-x86_64.exe
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

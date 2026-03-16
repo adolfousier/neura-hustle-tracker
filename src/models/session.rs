@@ -1,6 +1,10 @@
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
+/// A recorded usage session for a single application window.
+///
+/// Captures the app name, window title, duration, and rich metadata
+/// extracted from browsers, terminals, editors, and multiplexers.
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
 pub struct Session {
     pub id: Option<i32>,

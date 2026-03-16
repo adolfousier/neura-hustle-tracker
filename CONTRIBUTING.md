@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for your interest in contributing to Neura Hustle Tracker! This project is open source and welcomes contributions from the community.
+Thank you for your interest in contributing to Hustle Tracker! This project is open source and welcomes contributions from the community.
 
 ## License
 

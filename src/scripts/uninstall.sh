@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Neura Hustle Tracker - Uninstall Script
+# Hustle Tracker - Uninstall Script
 # This script removes the application, database volume, and local directory
 
 set -e
@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 echo "====================================="
-echo "Neura Hustle Tracker - Uninstall"
+echo "Hustle Tracker - Uninstall"
 echo "====================================="
 echo ""
 echo "This will:"
@@ -68,5 +68,5 @@ rm -rf "$(basename "$PROJECT_ROOT")"
 echo ""
 echo -e "${GREEN}✓ Uninstall complete!${NC}"
 echo ""
-echo "Neura Hustle Tracker has been completely removed."
+echo "Hustle Tracker has been completely removed."
 echo "All tracked data has been deleted."

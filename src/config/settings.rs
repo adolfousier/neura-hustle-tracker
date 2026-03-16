@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use crate::config::docker::DockerManager;
 
+/// Runtime settings resolved from environment variables and `.env` files.
 #[derive(Debug)]
 pub struct Settings {
     pub database_url: String,
@@ -13,13 +14,13 @@ pub struct Settings {
 
 impl Settings {
     /// Returns the application data directory.
-    /// Linux:   ~/.local/share/neura-hustle-tracker/
-    /// macOS:   ~/Library/Application Support/neura-hustle-tracker/
-    /// Windows: %APPDATA%\neura-hustle-tracker\
+    /// Linux:   ~/.local/share/hustle-tracker/
+    /// macOS:   ~/Library/Application Support/hustle-tracker/
+    /// Windows: %APPDATA%\hustle-tracker\
     pub fn data_dir() -> PathBuf {
         let base = dirs::data_dir()
             .unwrap_or_else(|| env::current_dir().unwrap());
-        base.join("neura-hustle-tracker")
+        base.join("hustle-tracker")
     }
 
     /// Returns the directory where .env lives.

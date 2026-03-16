@@ -1,9 +1,9 @@
-# Windows PowerShell Installation Script for Neura Hustle Tracker
+# Windows PowerShell Installation Script for Hustle Tracker
 # Run this script in PowerShell as Administrator
 
-Write-Host "Installing Neura Hustle Tracker dependencies..." -ForegroundColor Green
+Write-Host "Installing Hustle Tracker dependencies..." -ForegroundColor Green
 
-$logPath = "$env:TEMP\neura-hustle-tracker-install-$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+$logPath = "$env:TEMP\hustle-tracker-install-$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 Start-Transcript -Path $logPath
 
 Write-Host "Installation log: $logPath" -ForegroundColor Cyan
@@ -66,8 +66,8 @@ $env:PATH += ";C:\Program Files (x86)\GnuWin32\bin;C:\Program Files\GnuWin32\bin
 
 # Clone repository with verification
 $expectedHash = "abc123..."  # Get from trusted source
-git clone https://github.com/adolfousier/neura-hustle-tracker.git 2>$null
-cd neura-hustle-tracker
+git clone https://github.com/adolfousier/hustle-tracker.git 2>$null
+cd hustle-tracker
 
 # Verify repository integrity
 $actualHash = (Get-FileHash -Path "Cargo.toml" -Algorithm SHA256).Hash
@@ -136,7 +136,7 @@ if ($modifyProfile -eq "yes") {
     # Add clearly marked section with removal instructions
     $profileContent = @"
 
-# ===== Neura Hustle Tracker - Added $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') =====
+# ===== Hustle Tracker - Added $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') =====
 # To remove these functions, delete this entire section
     Set-Location '$currentPath'
     & "C:\Program Files (x86)\GnuWin32\bin\make.exe" daemon-start

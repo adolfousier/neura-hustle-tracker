@@ -5,7 +5,7 @@ This document outlines how to build and release executables for all platforms.
 ## Architecture
 
 ### Linux
-- **Single unified binary**: `neura_hustle_tracker` (includes both TUI and backend)
+- **Single unified binary**: `hustle_tracker` (includes both TUI and backend)
 - No daemon needed - tracking and UI run together
 
 ### macOS & Windows
@@ -98,15 +98,15 @@ gh release edit v0.4.15 --notes "Release notes here..."
 ## Binary Naming Convention
 
 ```
-neura_hustle_tracker-{os}-{arch}[.exe]
+hustle_tracker-{os}-{arch}[.exe]
 neura_hustle_daemon-{os}-{arch}[.exe]
 ```
 
 Examples:
-- `neura_hustle_tracker-linux-x86_64`
-- `neura_hustle_tracker-macos-x86_64`
-- `neura_hustle_tracker-macos-aarch64`
-- `neura_hustle_tracker-windows-x86_64.exe`
+- `hustle_tracker-linux-x86_64`
+- `hustle_tracker-macos-x86_64`
+- `hustle_tracker-macos-aarch64`
+- `hustle_tracker-windows-x86_64.exe`
 
 ## Distribution
 
@@ -119,10 +119,10 @@ Users can:
 
 **Linux:**
 ```bash
-# Download neura_hustle_tracker-linux-x86_64
-chmod +x neura_hustle_tracker-linux-x86_64
+# Download hustle_tracker-linux-x86_64
+chmod +x hustle_tracker-linux-x86_64
 docker compose up -d  # Start PostgreSQL
-./neura_hustle_tracker-linux-x86_64
+./hustle_tracker-linux-x86_64
 ```
 
 **macOS:**

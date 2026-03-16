@@ -1,3 +1,5 @@
+//! Terminal user interface built with Ratatui — charts, timelines, and session views.
+
 pub mod app;
 pub mod commands;
 pub mod hierarchical;

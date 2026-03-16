@@ -1,3 +1,8 @@
+//! Hustle Tracker daemon — background service for tracking application usage.
+//!
+//! Runs as a background process on macOS and Windows, continuously monitoring
+//! the active window and recording usage sessions to PostgreSQL.
+
 mod config;
 mod daemon;
 mod models;
@@ -32,7 +37,7 @@ async fn main() -> Result<()> {
 
         env_logger::Builder::from_env(
             env_logger::Env::default()
-                .default_filter_or("neura_hustle_tracker=debug")
+                .default_filter_or("hustle_tracker=debug")
         )
         .target(env_logger::Target::Pipe(Box::new(log_file)))
         .init();
@@ -49,7 +54,7 @@ async fn main() -> Result<()> {
         .init();
     }
 
-    log::info!("Starting Neura Hustle Tracker Daemon");
+    log::info!("Starting Hustle Tracker Daemon");
     let settings = match Settings::init().await {
         Ok(s) => s,
         Err(e) => {

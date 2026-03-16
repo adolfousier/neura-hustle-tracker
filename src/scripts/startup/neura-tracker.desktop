@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Neura Hustle Tracker
+Name=Hustle Tracker
 Comment=Background activity tracker daemon
-Exec=neura_hustle_daemon
+Exec=hustle_daemon
 Terminal=false
 X-GNOME-Autostart-enabled=true
 NoDisplay=true

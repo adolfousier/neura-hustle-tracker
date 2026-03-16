@@ -18,4 +18,4 @@ services:
 
 volumes:
   postgres_data:
-    name: neura-hustle-tracker_postgres_data
+    name: hustle-tracker_postgres_data

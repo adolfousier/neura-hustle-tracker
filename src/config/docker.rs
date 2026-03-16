@@ -71,7 +71,7 @@ impl DockerManager {
             "--env-file".to_string(),
             env_path.to_string_lossy().to_string(),
             "--project-name".to_string(),
-            "neura-hustle-tracker".to_string(),
+            "hustle-tracker".to_string(),
             "up".to_string(),
             "-d".to_string(),
         ]);

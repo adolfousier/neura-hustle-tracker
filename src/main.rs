@@ -1,3 +1,9 @@
+//! Hustle Tracker — terminal-based application usage tracker.
+//!
+//! This binary provides the TUI (terminal user interface) for viewing
+//! tracked application usage data. On Linux it also handles tracking
+//! in unified mode.
+
 mod config;
 mod database;
 mod models;
@@ -15,9 +21,9 @@ use clap::{Arg, Command};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let matches = Command::new("Neura Hustle Tracker")
-        .version("0.3.2")
-        .author("Your Name")
+    let matches = Command::new("Hustle Tracker")
+        .version(env!("CARGO_PKG_VERSION"))
+        .author("Adolfo Usier <adolfousier@gmail.com>")
         .about("Track your application usage")
         .arg(
             Arg::new("test-idle")
@@ -46,7 +52,7 @@ async fn main() -> Result<()> {
 
         env_logger::Builder::from_env(
             env_logger::Env::default()
-                .default_filter_or("neura_hustle_tracker=debug")
+                .default_filter_or("hustle_tracker=debug")
         )
         .target(env_logger::Target::Pipe(Box::new(log_file)))
         .init();
@@ -70,7 +76,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    log::info!("Starting Neura Hustle Tracker");
+    log::info!("Starting Hustle Tracker");
     let settings = match Settings::init().await {
         Ok(s) => s,
         Err(e) => {

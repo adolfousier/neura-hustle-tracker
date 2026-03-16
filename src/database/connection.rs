@@ -37,6 +37,7 @@ const MIGRATIONS: &[EmbeddedMigration] = &[
     },
 ];
 
+/// PostgreSQL connection wrapper with embedded migrations and session CRUD.
 pub struct Database {
     pool: Pool,
 }

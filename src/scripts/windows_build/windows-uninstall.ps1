@@ -1,8 +1,8 @@
-# Neura Hustle Tracker - Windows Uninstall Script
+# Hustle Tracker - Windows Uninstall Script
 # This script removes the application, database volume, and local directory
 
 Write-Host "=====================================" -ForegroundColor Cyan
-Write-Host "Neura Hustle Tracker - Uninstall" -ForegroundColor Cyan
+Write-Host "Hustle Tracker - Uninstall" -ForegroundColor Cyan
 Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -60,7 +60,7 @@ try {
     Write-Host ""
     Write-Host "✓ Uninstall complete!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Neura Hustle Tracker has been completely removed." -ForegroundColor Green
+    Write-Host "Hustle Tracker has been completely removed." -ForegroundColor Green
     Write-Host "All tracked data has been deleted." -ForegroundColor Green
 } catch {
     Write-Host ""

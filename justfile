@@ -1,13 +1,13 @@
 set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
 
-binary := if os() == "windows" { "target/release/neura_hustle_tracker.exe" } else { "target/release/neura_hustle_tracker" }
-daemon_binary := if os() == "windows" { "target/release/neura_hustle_daemon.exe" } else { "target/release/neura_hustle_daemon" }
+binary := if os() == "windows" { "target/release/hustle_tracker.exe" } else { "target/release/hustle_tracker" }
+daemon_binary := if os() == "windows" { "target/release/hustle_daemon.exe" } else { "target/release/hustle_daemon" }
 pid_file := "daemon.pid"
 
 default: help
 
 help:
-    @echo "Neura Hustle Tracker - Just Commands"
+    @echo "Hustle Tracker - Just Commands"
     @echo "======================================"
     @echo ""
     @echo "Quick Start (Linux - Unified Mode):"
@@ -33,7 +33,7 @@ help:
     @echo "Note: Credentials are auto-generated on first run!"
 
 run: check-wayland db-up build
-    @echo "Starting Neura Hustle Tracker..."
+    @echo "Starting Hustle Tracker..."
     #!/usr/bin/env bash
     ./{{ binary }}
 
@@ -43,11 +43,11 @@ dev: check-wayland db-up
 
 build:
     @echo "Building TUI release binary..."
-    cargo build --release --bin neura_hustle_tracker
+    cargo build --release --bin hustle_tracker
 
 build-daemon:
     @echo "Building daemon release binary..."
-    cargo build --release --bin neura_hustle_daemon
+    cargo build --release --bin hustle_daemon
 
 check-docker-compose:
     #!/usr/bin/env bash
@@ -212,7 +212,7 @@ build-all-releases:
 
 uninstall:
     #!/usr/bin/env bash
-    echo "Uninstalling Neura Hustle Tracker..."
+    echo "Uninstalling Hustle Tracker..."
     rm -f {{ pid_file }}
     echo ""
     echo "This will:"
@@ -230,7 +230,7 @@ uninstall:
         if [ "$confirm" = "yes" ]; then
             echo "Removing installation directory..."
             cd ..
-            rm -rf neura-hustle-tracker
+            rm -rf hustle-tracker
             echo "✓ Uninstall complete!"
         else
             echo "✗ Cancelled. Directory kept."
