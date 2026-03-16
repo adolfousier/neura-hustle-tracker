@@ -1,6 +1,6 @@
 [package]
 name = "hustle-tracker"
-version = "0.5.0"
+version = "0.4.20"
 edition = "2024"
 authors = ["Adolfo Usier <adolfousier@gmail.com>"]
 description = "Terminal-based application usage tracker — see where your time goes during work sessions"

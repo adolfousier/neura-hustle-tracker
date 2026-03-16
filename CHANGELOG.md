@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.20 (2026-03-16)
+
+- **Renamed to Hustle Tracker**: Project renamed from `neura_hustle_tracker` to `hustle-tracker`
+  - Crate name: `hustle-tracker` (matching GitHub repo)
+  - Binaries: `hustle_tracker` and `hustle_daemon`
+  - Updated all scripts, CI workflows, documentation, and startup files
+  - Data directory renamed: `~/.local/share/hustle-tracker/` (Linux), `~/Library/Application Support/hustle-tracker/` (macOS), `%APPDATA%\hustle-tracker\` (Windows)
+
+- **Published on crates.io**: Install with `cargo install hustle-tracker`
+  - Added full Cargo.toml metadata: description, license, keywords, categories, repository
+  - Added module-level (`//!`) and struct-level (`///`) doc comments across all modules
+
+- **CI: Automated crates.io publishing**: Release workflow now publishes to crates.io
+  - Runs `cargo publish --dry-run` to verify before publishing
+  - Skips publishing if the version is already on crates.io
+
 ## v0.4.19 (2026-02-23)
 
 - **Hyprland Window Detection**: Added native window tracking support for Hyprland compositor
